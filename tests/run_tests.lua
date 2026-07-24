@@ -2445,6 +2445,49 @@ do
 end
 end
 
+-- ================= issue #142: player backsprite X =================
+do
+-- pret/pokered places the player mon pic at hlcoord 1,5 (screen x=8).
+-- Drawing at x=16 put every backsprite one tile too far right.
+do
+  local img = {
+    getWidth = function() return 28 end,
+    getHeight = function() return 28 end,
+  }
+  local battle = setmetatable({
+    showPlayerBack = false,
+    safari = false,
+    demo = false,
+    sendingOut = false,
+    phase = "command",
+    player = { sprite = img, isPlayer = true },
+  }, BattleState)
+  function battle:picImage(i) return i end
+  function battle:growInScale() return nil end
+  function battle:fxHidden() return false end
+
+  local xs = {}
+  local origDraw = love.graphics.draw
+  love.graphics.draw = function(drawn, x, y, r, sx, sy)
+    if drawn == img then xs[#xs + 1] = x end
+  end
+  battle:drawPicsLayer(0, 0, 0)
+  love.graphics.draw = origDraw
+  eq(xs[1], 8, "player backsprite rests at hlcoord 1,5 (x=8)")
+
+  -- trainer/old-man back pic uses the same slot
+  battle.showPlayerBack = true
+  battle.playerBackPic = img
+  xs = {}
+  love.graphics.draw = function(drawn, x, y, r, sx, sy)
+    if drawn == img then xs[#xs + 1] = x end
+  end
+  battle:drawPicsLayer(0, 0, 0)
+  love.graphics.draw = origDraw
+  eq(xs[1], 8, "player/old-man back pic also rests at x=8")
+end
+end
+
 -- ================= BUGS.md batch: ledge-shadow =================
 do
 -- == Task 12: ledge-hop shadow is the 2x2 mirrored OAM block ==

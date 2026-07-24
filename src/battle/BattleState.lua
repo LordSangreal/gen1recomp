@@ -258,6 +258,10 @@ local function makeBattler(data, mon, isPlayer, save)
   }
 end
 
+-- LinkBattle builds clamped copies with save=nil (no badge boosts); wild
+-- and trainer constructors pass the live save for the player side.
+BattleState.makeBattler = makeBattler
+
 -- The battle pic for `species` on the given side (back pic for the
 -- player side, front pic for the enemy side), tinted PAL_GRAYMON --
 -- the same path makeBattler uses, but forced gray -- since this is only
@@ -832,7 +836,7 @@ function BattleState:computeMusicKind()
     return "final"
   elseif isBoss or (self.trainer and self.trainer.id == "OPP_LANCE") then
     return "gym"
-  elseif self.kind == "trainer" then
+  elseif self.kind == "trainer" or self.kind == "link" then
     return "trainer"
   end
   return "wild"
@@ -894,6 +898,17 @@ function BattleState:enter()
       self.showEnemyTrainer = false
       self:startGrowIn(self.enemy)
     end)
+  elseif self.kind == "link" then
+    -- Colosseum has no foe trainer pic, but the enemy mon still grows
+    -- out of the ball after "X sent out Y!" (not the wild "already there"
+    -- intro that LinkBattle previously inherited from newWild).
+    self.enemySendingOut = true
+    self:say(("%s sent\nout %s!"):format(self.opponentName or "FOE",
+                                          self.enemy.name))
+    self:act(function()
+      self.enemySendingOut = false
+      self:startGrowIn(self.enemy)
+    end)
   end
   if not self.ghost then
     -- the enemy's cry plays as it appears (data/pokemon/cries.asm)
@@ -950,20 +965,37 @@ function BattleState:exit()
   end
 end
 
--- An action the battler is locked into (bypasses the menu), or nil.
-function BattleState:lockedAction(battler)
+-- End a trapping sequence (USING_TRAPPING_MOVE).  SendOutMon clears the
+-- foe's bit (core.asm:1761-1762); EnemySendOutFirstMon clears the
+-- player's (core.asm:1314-1315).  Any switch frees the other side.
+local function clearTrapping(battler)
+  if not battler then return end
+  battler.trappingTurns = nil
+  battler.trapMove = nil
+  battler.trapDamage = nil
+end
+
+-- Actions that skip DisplayBattleMenu entirely (core.asm:300-310):
+-- recharge, Rage, thrash, charge.  Bide / trapping / being held do NOT
+-- skip the menu -- the player can still item/switch (and must press
+-- FIGHT to continue a trapping sequence).
+function BattleState:menuLockedAction(battler)
   if battler.mustRecharge then return { special = "recharge" } end
   if battler.charging then return battler.charging end
   if battler.thrashTurns and battler.thrashTurns > 0 then return battler.thrashMove end
+  if battler.rageMove then return battler.rageMove end
+  return nil
+end
+
+-- After FIGHT: skip MoveSelectionMenu (core.asm:320-329).  Own
+-- trapping/Bide continues; foe trapping forces CANNOT_MOVE ($ff).
+function BattleState:fightLockedAction(battler)
   if battler.trappingTurns and battler.trappingTurns > 0 then
     return { special = "trapping" }
   end
   if battler.bideTurns then return { special = "bide" } end
-  if battler.rageMove then return battler.rageMove end
-  -- held in place while the OPPONENT's trapping move is running
-  -- (core.asm:316-322 reads the live USING_TRAPPING_MOVE bit, so a
-  -- trap ended early by paralysis/faint frees the victim immediately);
-  -- boundTurns is a mirror kept for Status.beforeMove's held check
+  -- held while the OPPONENT's trapping bit is set (live mirror so a
+  -- trap ended early by paralysis/faint frees the victim immediately)
   local opp = battler.isPlayer and self.enemy or self.player
   battler.boundTurns = opp and opp.trappingTurns
                        and math.max(1, opp.trappingTurns) or nil
@@ -971,6 +1003,11 @@ function BattleState:lockedAction(battler)
     return { special = "bound" }
   end
   return nil
+end
+
+-- Full lock for AI / callers that need any forced action.
+function BattleState:lockedAction(battler)
+  return self:menuLockedAction(battler) or self:fightLockedAction(battler)
 end
 
 function BattleState:playerHasPP()
@@ -1079,8 +1116,9 @@ function BattleState:update(dt)
     if not (self.player.mustRecharge or self.player.rageMove) then
       self.player.flinched, self.enemy.flinched = false, false
     end
-    -- locked multi-turn actions skip the menu entirely
-    local locked = self:lockedAction(self.player)
+    -- only recharge/Rage/thrash/charge skip DisplayBattleMenu; trapping
+    -- victims (and wrappers) still get FIGHT/PKMN/ITEM/RUN (core.asm:312)
+    local locked = self:menuLockedAction(self.player)
     if locked then
       self:resolveTurn(locked)
       return
@@ -1104,6 +1142,13 @@ function BattleState:update(dt)
         end)
         self:act(function() self:endOfTurn() end)
       elseif choice == "fight" then
+        -- After the menu: own trapping/Bide or foe Wrap skips the move
+        -- list and forces the locked action (core.asm:320-329)
+        local fightLock = self:fightLockedAction(self.player)
+        if fightLock then
+          self:resolveTurn(fightLock)
+          return
+        end
         if not self:playerHasPP() then
           -- _NoMovesLeftText, then Struggle engages
           self:say(("%s has no\nmoves left!"):format(self.player.name))
@@ -1514,6 +1559,9 @@ function BattleState:resolveSwitch(newMon)
     self:restoreMimicked(self.player) -- the battle copy leaves with it
     local previous = self.player
     self.player = makeBattler(self.data, newMon, true, self.game.save)
+    -- SendOutMon (core.asm:1761-1762): player's send-out clears the
+    -- foe's USING_TRAPPING_MOVE -- Wrap/Bind/etc. ends on any switch
+    clearTrapping(self.enemy)
     self:syncSides()
     Runtime.emit("battle.battler_switched", {
       battle = self, side = self.sides[1], battler = self.player,
@@ -2094,6 +2142,8 @@ function BattleState:executeAction(user, target, action)
     local oldName = self.enemy.name
     self.enemyIndex = action.index
     self.enemy = makeBattler(self.data, self.enemyParty[action.index], false)
+    -- EnemySendOutFirstMon (core.asm:1314-1315): clears player's trap
+    clearTrapping(self.player)
     self:syncSides()
     Runtime.emit("battle.battler_switched", {
       battle = self, side = self.sides[2], battler = self.enemy,
@@ -2574,8 +2624,20 @@ function BattleState:enemyMonFainted()
   self.participants = {}
 
   if self.kind == "trainer" then
-    if self.enemyIndex < #self.enemyParty then
-      self.enemyIndex = self.enemyIndex + 1
+    -- EnemySendOutFirstMon / AnyEnemyPokemonAliveCheck (core.asm): scan
+    -- the whole enemy party for the first mon with HP left.  Blindly
+    -- doing enemyIndex+1 softlocks after an AI switch (Agatha): a later
+    -- slot can already be fainted, so the empty-HP mon comes out, the
+    -- FIGHT menu returns, and executeAction no-ops on target.hp <= 0.
+    local nextIndex
+    for i, mon in ipairs(self.enemyParty) do
+      if mon.hp > 0 then
+        nextIndex = i
+        break
+      end
+    end
+    if nextIndex then
+      self.enemyIndex = nextIndex
       -- SHIFT battle style (the default): announce the next mon and
       -- offer a free switch (SET skips the prompt)
       local nextMon = self.enemyParty[self.enemyIndex]
@@ -2599,6 +2661,7 @@ function BattleState:enemyMonFainted()
                 if mon ~= self.player.mon and mon.hp > 0 then
                   local previous = self.player
                   self.player = makeBattler(self.data, mon, true, game.save)
+                  clearTrapping(self.enemy) -- SendOutMon clears foe trap
                   self:syncSides()
                   Runtime.emit("battle.battler_switched", {
                     battle = self, side = self.sides[1],
@@ -2624,6 +2687,8 @@ function BattleState:enemyMonFainted()
       self:act(function()
         local previous = self.enemy
         self.enemy = makeBattler(self.data, self.enemyParty[self.enemyIndex], false)
+        -- EnemySendOutFirstMon (core.asm:1314-1315): clears player's trap
+        clearTrapping(self.player)
         self:syncSides()
         Runtime.emit("battle.battler_switched", {
           battle = self, side = self.sides[2], battler = self.enemy,
@@ -2777,6 +2842,7 @@ function BattleState:openReplacementMenu()
         self:restoreMimicked(self.player)
         local previous = self.player
         self.player = makeBattler(self.data, mon, true, game.save)
+        clearTrapping(self.enemy) -- SendOutMon clears foe trap
         self:syncSides()
         Runtime.emit("battle.battler_switched", {
           battle = self, side = self.sides[1], battler = self.player,
@@ -3739,7 +3805,7 @@ function BattleState:drawPicsLayer(slide, sx, sy)
     end
   end
 
-  -- Player: back sprite bottom-left (2x like the GB, feet near y=100).
+  -- Player: back sprite at hlcoord 1,5 (x=8), 2x like the GB, feet at y=96.
   local hidePlayer = self.safari or self.demo
   if self.showPlayerBack and self.playerBackPic then
     -- Red's (or the old man's) back pic until "Go!"; it stays up for
@@ -3747,7 +3813,7 @@ function BattleState:drawPicsLayer(slide, sx, sy)
     local img = self:picImage(self.playerBackPic)
     local pad = imagePadBottom[self.playerBackPic] or 0
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(img, 16 + slide + sx,
+    love.graphics.draw(img, 8 + slide + sx,
                        96 - (img:getHeight() - pad) * 2 + sy, 0, 2, 2)
   elseif self.player and self.player.sprite and not hidePlayer
      and not self.sendingOut and not self:fxHidden(self.player) then
@@ -3758,14 +3824,14 @@ function BattleState:drawPicsLayer(slide, sx, sy)
     local gs = self:growInScale(self.player)
     if gs then
       -- the player-side AnimateSendingOutMon grow (after the poof,
-      -- core.asm:1757-1762): feet pinned at y=96, center at x=16+w
+      -- core.asm:1757-1762): feet pinned at y=96, center at x=8+w
       if gs > 0 then
-        love.graphics.draw(img, 16 + img:getWidth() * (1 - gs) + sx,
+        love.graphics.draw(img, 8 + img:getWidth() * (1 - gs) + sx,
                            96 - (img:getHeight() - pad) * 2 * gs + sy,
                            0, 2 * gs, 2 * gs)
       end
     else
-      self:drawBattlerPic(self.player, 16 + sx,
+      self:drawBattlerPic(self.player, 8 + sx,
                           96 - (img:getHeight() - pad) * 2 + sy, 2)
     end
   end
@@ -3820,16 +3886,22 @@ function BattleState:drawHUDs(slide)
     love.graphics.setColor(0, 0, 0, 1)
     Font.draw(("BALLx%2d"):format(self.safari.balls), 88, 72)
   end
-  -- trainer-battle party pokeball rows during the intro
+  -- trainer/link party pokeball rows during the intro
   -- (SetupPlayerAndEnemyPokeballs, draw_hud_pokeball_gfx.asm)
-  if self.kind == "trainer" and (self.showEnemyTrainer or self.showPlayerBack)
-     and slide == 0 then
+  local showIntroBalls = slide == 0 and (
+    (self.kind == "trainer" and (self.showEnemyTrainer or self.showPlayerBack))
+    or (self.kind == "link" and (self.showPlayerBack or self.enemySendingOut))
+  )
+  if showIntroBalls then
     love.graphics.setColor(1, 1, 1, 1)
-    if self.showEnemyTrainer and self.enemyParty then
+    if self.enemyParty and (
+         (self.kind == "trainer" and self.showEnemyTrainer)
+         or (self.kind == "link" and self.enemySendingOut)
+       ) then
       self:drawBallRow(self.enemyParty, 64, 16, -8)
     end
     if self.showPlayerBack then
-      self:drawBallRow(self.game.save.party, 88, 80, 8)
+      self:drawBallRow(self.playerParty or self.game.save.party, 88, 80, 8)
     end
   end
   local hidePlayer = self.safari or self.demo

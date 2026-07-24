@@ -79,6 +79,58 @@ do
         "the queued trap anim row is attributed to the attacker")
 end
 
+-- (2b) Issue #140: being held by Wrap must NOT skip DisplayBattleMenu
+-- (core.asm:312 then 323-329).  FIGHT forces CANNOT_MOVE; AI still
+-- auto-selects bound.  A player switch clears the foe's trap bit
+-- (SendOutMon core.asm:1761-1762).
+do
+  local tb = freshBattle()
+  tb.enemy.trappingTurns = 2
+  tb.enemy.trapMove = "WRAP"
+  tb.enemy.trapDamage = 5
+  check(tb:menuLockedAction(tb.player) == nil,
+        "a Wrap victim still gets the battle menu")
+  local fight = tb:fightLockedAction(tb.player)
+  check(fight and fight.special == "bound",
+        "FIGHT while wrapped selects CANNOT_MOVE (bound)")
+  -- wrapper continues only after FIGHT, not by skipping the menu
+  check(tb:menuLockedAction(tb.enemy) == nil,
+        "a Wrap user still gets the battle menu")
+  check(tb:fightLockedAction(tb.enemy) and
+        tb:fightLockedAction(tb.enemy).special == "trapping",
+        "FIGHT while wrapping continues the trap")
+  check(tb:lockedAction(tb.player) and tb:lockedAction(tb.player).special == "bound",
+        "lockedAction still reports bound for AI / callers")
+end
+do
+  Game.save.party = {
+    Pokemon.new(Data, "BULBASAUR", 20),
+    Pokemon.new(Data, "SQUIRTLE", 20),
+  }
+  local tb = BattleState.newWild(Game, "EKANS", 10)
+  tb.enemy.trappingTurns = 3
+  tb.enemy.trapMove = "WRAP"
+  tb.enemy.trapDamage = 7
+  local acts = {}
+  function tb:act(fn) acts[#acts + 1] = fn end
+  function tb:actNext(fn) acts[#acts + 1] = fn end
+  function tb:sayNext() end
+  function tb:animNext() end
+  function tb:startGrowIn() end
+  function tb:syncSides() end
+  function tb:markParticipant() end
+  function tb:restoreMimicked() end
+  function tb:executeAction() end
+  function tb:endOfTurn() end
+  function tb:enemyAction() return { special = "bound" } end
+  tb:resolveSwitch(Game.save.party[2])
+  acts[1]() -- send-out clears foe trap
+  eq(tb.enemy.trappingTurns, nil, "player switch clears foe Wrap/Bind/etc.")
+  eq(tb.enemy.trapMove, nil, "player switch clears trapMove")
+  check(tb:fightLockedAction(tb.player) == nil,
+        "switch-in is free to choose a move")
+end
+
 -- (3) MIMIC runs MID-move (MimicEffect, effects.asm:1203-1273): the
 -- move executes, MoveHitTest runs, and only on a hit does the player's
 -- copy menu open (.letPlayerChooseMove) -- the enemy's Mimic and link

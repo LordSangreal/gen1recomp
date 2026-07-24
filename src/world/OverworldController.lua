@@ -322,6 +322,12 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
   -- 16/18 gate exits), and the scripted door-mat walkout that follows
   -- suppresses onStepComplete, so waiting for a plain step never mounts
   self:checkForcedMovement()
+  -- Seafoam B4F's map script pushes off the B3F stair warps every frame
+  -- while the upper plugs are out (SeafoamIslandsB4FDefaultScript); the
+  -- B3F/B4F force-surf mouths also arm their MOVE_OBJECT current scripts
+  -- from CheckForceBikeOrSurf.  Re-check here so a warp-in does not sit
+  -- idle on those cells waiting for a player step.
+  self:checkSeafoamCurrent()
 
   -- snap the camera immediately: the overworld doesn't update while a
   -- Transition is on top, so a stale camera would show the new map at
@@ -2669,8 +2675,11 @@ function OverworldState:onStepComplete()
   elseif entry then
     -- still standing on the warp we arrived through; do not re-trigger it
   else
+    -- CheckWarpsNoCollision: door/warp tiles fire immediately; otherwise
+    -- ExtraWarpCheck must pass AND either a d-pad is held or BIT_FORCED_WARP
+    -- is set (Seafoam B3F currents — home/overworld.asm).
     local w = Warp.onArrive(self.map, p.cellX, p.cellY)
-    if not w and self:dirHeld() then
+    if not w and (self:dirHeld() or self.forcedWarp) then
       w = Warp.onCollision(self.map, Game.data.field.warpCarpets,
                            p.cellX, p.cellY, p.facing)
     end
@@ -2751,9 +2760,11 @@ function OverworldState:runSpinnerMoves(moves, i)
   local mv = moves[i]
   if not mv then
     self.player.spinning = false
-    if not self:checkSpinner() and self.player.surfing then
-      self:checkSeafoamCurrent()
-    end
+    -- Scripted steps skip onStepComplete while they run; once the RLE
+    -- finishes, re-enter the normal landing pipeline so chained spinners,
+    -- Seafoam currents, and CheckWarpsNoCollision (incl. BIT_FORCED_WARP)
+    -- see the tile we stopped on — same as pokered after simulated joypad.
+    self:onStepComplete()
     return
   end
   self.player.spinning = true -- spin the sprite while sliding
@@ -2926,6 +2937,9 @@ function OverworldState:checkSeafoamCurrent()
   if sf.forcedExit and p.surfing and not allSet(sf.forcedExit.activeUntilEvents) then
     for _, c in ipairs(sf.forcedExit.coords) do
       if p.cellX == c.x and p.cellY == c.y then
+        -- SeafoamIslandsB4FDefaultScript: res BIT_FORCED_WARP before the
+        -- push so the B3F stair warps underfoot cannot bounce you back.
+        self.forcedWarp = false
         require("src.core.Sound").play(Game.data, "Collision")
         self:scriptMove(p, "up", c.y == 17 and 2 or 1)
         return true
@@ -2947,6 +2961,12 @@ function OverworldState:checkSeafoamCurrent()
   end
   for _, c in ipairs(active) do
     if p.cellX == c.x and p.cellY == c.y then
+      -- SeafoamIslandsB3F.asm sets BIT_FORCED_WARP before DecodeRLEList so
+      -- the south-edge water stairs auto-warp when the current ends.
+      if FieldDefaults.fieldValue(Game.data, "seafoam", self.map.id,
+                                  "setsForcedWarp") then
+        self.forcedWarp = true
+      end
       self:runSpinnerMoves(c.moves, 1)
       return true
     end
