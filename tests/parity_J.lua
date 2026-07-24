@@ -221,9 +221,34 @@ do
   check(fe.chooser == nil, "enemy Mimic never opens a chooser")
   eq(tbe.enemy.curMoves[1].id, "SAND_ATTACK",
      "enemy Mimic copies a random player move immediately")
-  eq(tbe.enemy.curMoves[1].pp, 9, "enemy Mimic also keeps the slot's PP")
+  -- Gen 1 never decrements enemy PP, so the copied move inherits Mimic's
+  -- full remaining PP (still 10). Player Mimic would leave 9.
+  eq(tbe.enemy.curMoves[1].pp, 10, "enemy Mimic keeps full slot PP (no enemy drain)")
   check(fe.anim and hasText(fe, "learned"),
         "enemy Mimic still plays the animation and learned text")
+
+-- === #94: gen1_faithful enemies never deplete PP; player still does ===
+do
+  local tb = freshBattle()
+  check(tb.ruleset.enemyUnlimitedPP,
+        "default ruleset grants enemy unlimited PP")
+  local enemyMove = { id = "TACKLE", pp = 5 }
+  local playerMove = { id = "TACKLE", pp = 5 }
+  tb.queue, tb.nextInsert = {}, 0
+  tb:performMove(tb.enemy, tb.player, enemyMove)
+  eq(enemyMove.pp, 5, "gen1_faithful: enemy move PP is not decremented")
+  tb.queue, tb.nextInsert = {}, 0
+  tb:performMove(tb.player, tb.enemy, playerMove)
+  eq(playerMove.pp, 4, "gen1_faithful: player move PP still decrements")
+
+  -- modern_clean tracks enemy PP (Gen 2+ style)
+  local modern = require("src.battle.rulesets.modern_clean")
+  tb.ruleset = modern
+  local enemyModern = { id = "TACKLE", pp = 5 }
+  tb.queue, tb.nextInsert = {}, 0
+  tb:performMove(tb.enemy, tb.player, enemyModern)
+  eq(enemyModern.pp, 4, "modern_clean: enemy move PP decrements")
+end
 
   -- link battle: the player's Mimic rolls random too (no chooser)
   local tbl = freshBattle()

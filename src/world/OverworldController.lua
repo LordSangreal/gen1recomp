@@ -303,6 +303,9 @@ function OverworldState:setMap(mapId, x, y, facing, opts)
   else
     self.player = Player.new(Game.data, x, y, facing)
   end
+  -- crossConnection re-arms this after setMap; clear so a warp/reload
+  -- cannot leave a stale deferred PlayMapMusic pending
+  self.pendingSeamMusic = nil
   self.entities = { self.player }
   for _, n in ipairs(self.npcs) do table.insert(self.entities, n) end
 
@@ -808,6 +811,15 @@ function OverworldState:update(dt)
   if entry and (self.player.cellX ~= entry.x or self.player.cellY ~= entry.y) then
     self.warpEntryCell = nil
   end
+  -- deferred PlayMapMusic from crossConnection (issue #93)
+  if stepped and self.pendingSeamMusic then
+    local mapId = self.pendingSeamMusic
+    self.pendingSeamMusic = nil
+    if mapId == self.map.id then
+      require("src.core.Music").playMap(Game.data, mapId, Game.save.onBike,
+                                        self.player.surfing)
+    end
+  end
   if stepped and not scripted then
     self:onStepComplete()
   end
@@ -1056,7 +1068,15 @@ function OverworldState:crossConnection(dir, conn)
   if not Map.defPassable(dest, ts, x, y, p.surfing) then
     return false
   end
-  self:setMap(conn.map, x, y, p.facing, { seamless = true })
+  -- keepMusic: defer PlayMapMusic until the seam step lands.  Starting a
+  -- new chip song inside setMap used to hitch the render thread (~200ms)
+  -- so FixedStep catch-up ate the walk frames (issue #93).  Threaded synth
+  -- removed most of that hitch; discarding catch-up + deferring the song
+  -- still protects the visible step when neighbor rebuild or the sync
+  -- fallback stalls, and avoids the rare one-frame volume spike from a
+  -- song swap mid-step.
+  self:setMap(conn.map, x, y, p.facing, { seamless = true, keepMusic = true })
+  self.pendingSeamMusic = conn.map
   -- place the player one cell before the seam (their old world spot,
   -- which the neighbor strip renders identically) and start the step
   -- into the new map RIGHT NOW so there is no one-frame stall at the
@@ -1070,9 +1090,13 @@ function OverworldState:crossConnection(dir, conn)
   p.targetX, p.targetY = x, y
   p.moving = true
   p.progress = 0
+  -- fresh walk-cycle clock so the seam step always shows leg frames
+  -- (mid-cycle stand phase would otherwise look like a slide)
+  p.animClock = 0
   p.stepFramesCur = Game.save.onBike
     and (FieldDefaults.world(Game.data, "bikeStepFrames") or 8)
     or (FieldDefaults.world(Game.data, "stepFrames") or 16)
+  require("src.core.FixedStep"):discardCatchup()
   return true
 end
 
@@ -3175,16 +3199,20 @@ end
 -- Warp to the last heal point (blackout, ESCAPE ROPE, DIG/TELEPORT).
 -- The heal point is usually an interior, so LAST_MAP exits are re-pointed
 -- at its remembered town door rather than wherever the player left from.
-function OverworldState:warpToHealPoint(onDone)
+--
+-- opts.arrive = "teleport" for Dig/Teleport/Escape Rope (LeaveMapAnim /
+-- EnterMapAnim).  Blackouts omit it: pret HandleBlackOut only
+-- GBFadeOutToBlack + PrepareForSpecialWarp + SpecialEnterMap, and never
+-- sets BIT_FLY_WARP / BIT_DUNGEON_WARP, so EnterMap never runs EnterMapAnim.
+function OverworldState:warpToHealPoint(onDone, opts)
   local heal = self:healPoint()
   self.player.surfing = false
   -- HandleFlyWarpOrDungeonWarp + DisplayPlayerBlackedOutText both clear
   -- BIT_ALWAYS_ON_BIKE (home/overworld.asm / home/text_script.asm)
   Game.save.forcedBike = nil
-  -- rematerializing plays the teleport-in poof (EnterMapAnim in
-  -- engine/overworld/player_animations.asm: SFX_TELEPORT_ENTER_1, then
-  -- ENTER_2 after the spin-down); blackouts take this path too
-  self.arriveWarp = "teleport"
+  if opts and opts.arrive == "teleport" then
+    self.arriveWarp = "teleport"
+  end
   self:startWarpTo(heal.map, heal.x, heal.y, "down", onDone)
   if heal.outdoor then
     self:rememberOutdoor(heal.outdoor.id, heal.outdoor.x, heal.outdoor.y)
@@ -3222,9 +3250,9 @@ function OverworldState:startWarpTo(mapId, x, y, facing, onDone, opts)
     -- one-step justWarped guard, which only skipped the very next frame's
     -- check and so let a mon walked back onto the pad re-trigger it.
     self.warpEntryCell = { x = x, y = y }
-    -- Fly/Teleport/Dig/Escape-Rope/blackout landings poof the player
-    -- back in (player_animations.asm EnterMapAnim); ordinary door
-    -- warps never take this branch
+    -- Fly/Teleport/Dig/Escape-Rope landings poof the player back in
+    -- (player_animations.asm EnterMapAnim).  Blackouts and ordinary
+    -- door warps never take this branch.
     if arriveWarp == "fly" then
       require("src.core.Sound").play(Game.data, "Fly")
     elseif arriveWarp == "teleport" then
