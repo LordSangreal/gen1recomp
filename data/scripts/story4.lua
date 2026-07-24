@@ -645,12 +645,44 @@ local function e4ExitSeal(flag, closedBlock, openBlock, dontRunText, autoFlag)
   }
 end
 
+-- Lorelei/Bruno/Agatha EndBattleScript (pokered): EndTrainerBattle then
+-- DisplayTextID -> TalkToTrainer, which prints the AfterBattle text on a
+-- win.  engageTrainer only shows the won line, so wrap talk like Lance /
+-- Game Corner Rocket and push header.after immediately after a win.
+local function e4LeaderTalk(afterLabel)
+  return function(game, ow, npc, done)
+    done = done or function() end
+    if ow:trainerDefeated(npc) then
+      local after = text(game)[afterLabel]
+      if after then push(game, after, done) else done() end
+      return
+    end
+    ow:engageTrainer(npc, function()
+      if not ow:trainerDefeated(npc) then
+        done()
+        return
+      end
+      local after = text(game)[afterLabel]
+      if after then push(game, after, done) else done() end
+    end)
+  end
+end
+
 M.LORELEIS_ROOM = e4ExitSeal("EVENT_BEAT_LORELEIS_ROOM_TRAINER_0", 0x24, 0x05,
   "_LoreleisRoomLoreleiDontRunAwayText", "EVENT_AUTOWALKED_INTO_LORELEIS_ROOM")
+M.LORELEIS_ROOM.talk = {
+  TEXT_LORELEISROOM_LORELEI = e4LeaderTalk("_LoreleisRoomLoreleiAfterBattleText"),
+}
 M.BRUNOS_ROOM = e4ExitSeal("EVENT_BEAT_BRUNOS_ROOM_TRAINER_0", 0x24, 0x05,
   "_BrunosRoomBrunoDontRunAwayText", "EVENT_AUTOWALKED_INTO_BRUNOS_ROOM")
+M.BRUNOS_ROOM.talk = {
+  TEXT_BRUNOSROOM_BRUNO = e4LeaderTalk("_BrunoAfterBattleText"),
+}
 M.AGATHAS_ROOM = e4ExitSeal("EVENT_BEAT_AGATHAS_ROOM_TRAINER_0", 0x3b, 0x0e,
   "_AgathasRoomAgathaDontRunAwayText", "EVENT_AUTOWALKED_INTO_AGATHAS_ROOM")
+M.AGATHAS_ROOM.talk = {
+  TEXT_AGATHASROOM_AGATHA = e4LeaderTalk("_AgathaAfterBattleText"),
+}
 
 -- -------------------------------------------------------------------
 -- Lance's room (scripts/LancesRoom.asm). Unlike the other three E4
