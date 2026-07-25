@@ -275,6 +275,10 @@ local function makeBattler(data, mon, isPlayer, save)
     badgeBoosts = badgeBoosts,
     statuses = data.statuses,
     shownHP = mon.hp, -- the HP the bar displays (UpdateHPBar drain)
+    -- HUD status label (DrawHUDsAndHPBars); mon.status can land mid-move
+    -- while the tilemap still shows the prior condition until the next
+    -- post-action HUD refresh (core.asm after Execute*Move)
+    shownStatus = mon.status,
     stages = {},
     -- volatile state; Transform/Conversion/Mimic override the cur* fields
     curStats = mon.stats,
@@ -556,6 +560,12 @@ function BattleState:say(text)
   table.insert(self.queue, { text = text })
 end
 
+-- Message that opens YES/NO once typed out, keeping the text visible
+-- underneath (pokered `done` + TWO_OPTION_MENU / TextBox opts.choice).
+function BattleState:sayChoice(text, onChoose)
+  table.insert(self.queue, { text = text, choice = onChoose })
+end
+
 function BattleState:act(fn)
   table.insert(self.queue, { fn = fn })
 end
@@ -816,8 +826,24 @@ function BattleState:updateQueue()
   if self.charIndex < self.total then
     self.charIndex = math.min(self.total, self.charIndex + 2)
   else
+    local item = self.current
+    -- TrainerAboutToUseText ends in `done` then DisplayTextBoxID: YES/NO
+    -- overlays the still-visible "Will … change POKéMON?" page.
+    if item and item.choice and not item.choiceOpen then
+      item.choiceOpen = true
+      self.waitingUI = true
+      local ChoiceBox = require("src.ui.ChoiceBox")
+      local battle = self
+      self.game.stack:push(ChoiceBox.new(self.game, function(yes)
+        local fn = item.choice
+        battle.current = nil
+        fn(yes)
+      end))
+      return true
+    end
     local input = self.game.input
-    if input:wasPressed("a") or input:wasPressed("b") then
+    if not (item and item.choice)
+       and (input:wasPressed("a") or input:wasPressed("b")) then
       self.current = nil
     end
   end
@@ -1068,11 +1094,14 @@ function BattleState:update(dt)
   self:updateFx()
   local input = self.game.input
 
-  -- safety net: HP changed outside a queued drain (level-up heals,
-  -- field effects) snaps once the queue is idle
+  -- safety net: HP/status changed outside a queued drain (level-up heals,
+  -- field effects, bag cures) snaps once the queue is idle
   if self.phase == "menu" then
     for _, b in ipairs({ self.player, self.enemy }) do
-      if b and b.shownHP then b.shownHP = b.mon.hp end
+      if b then
+        if b.shownHP then b.shownHP = b.mon.hp end
+        b.shownStatus = b.mon.status
+      end
     end
   end
 
@@ -2153,90 +2182,105 @@ end
 -- move execution pipeline
 -- ---------------------------------------------------------------------
 
+-- Mirror DrawHUDsAndHPBars: reveal mon.status on the HUD only after the
+-- current action's queued anim/text have played (PoisonEffect sets the
+-- bit before PlayCurrentMoveAnimation2 + PrintText, but the HUD redraw
+-- waits until after Execute*Move returns).
+function BattleState:syncShownStatus()
+  for _, b in ipairs({ self.player, self.enemy }) do
+    if b then b.shownStatus = b.mon.status end
+  end
+end
+
 function BattleState:executeAction(user, target, action)
   if user.mon.hp <= 0 or target.mon.hp <= 0 then return end
   if not action then return end
 
-  -- ghost battles: the ghost never attacks; its whole turn is the
-  -- GetOutText (ExecuteEnemyMove -> PrintGhostText, core.asm:5462-5463)
-  if self.ghost and not user.isPlayer then
-    self:sayNext(self.data.text._GetOutText or "GHOST: Get out...\nGet out...")
-    return
-  end
-
-  -- refresh the held-in-place mirror before the status checks (see
-  -- lockedAction): the victim is held exactly while the opponent's
-  -- trapping bit is set -- including a counter sitting at 0 until the
-  -- end-of-turn CheckNumAttacksLeft clear
-  user.boundTurns = target.trappingTurns
-                    and math.max(1, target.trappingTurns) or nil
-
-  -- trainer class AI actions (engine/battle/trainer_ai.asm)
-  if action.special == "aiItem" then
-    self.aiUses = (self.aiUses or 1) - 1
-    for _, m in ipairs(TrainerAI.useItem(self, action.item)) do
-      self:sayNext(prefixEnemy(m, self.enemy))
-    end
-    self:drainNext()
-    require("src.core.Sound").play(self.data, "Heal_Ailment")
-    return
-  end
-  if action.special == "aiSwitch" then
-    self.aiUses = (self.aiUses or 1) - 1
-    local previous = self.enemy
-    local oldName = self.enemy.name
-    self.enemyIndex = action.index
-    self.enemy = makeBattler(self.data, self.enemyParty[action.index], false)
-    -- EnemySendOutFirstMon (core.asm:1314-1315): clears player's trap
-    clearTrapping(self.player)
-    self:syncSides()
-    Runtime.emit("battle.battler_switched", {
-      battle = self, side = self.sides[2], battler = self.enemy,
-      previous = previous,
-    })
-    self.aiUses = self:aiUsesFor()
-    markSeen(self.game, self.enemy.mon.species)
-    -- _AIBattleWithdrawText: "X with-/drew Y!"
-    self:sayNext(("%s with-\ndrew %s!"):format(self.trainer.name, oldName))
-    self:sayNext(("%s sent\nout %s!"):format(self.trainer.name, self.enemy.name))
-    return
-  end
-
-  -- special locked actions.  All of them still run the status gauntlet:
-  -- CheckPlayerStatusConditions (core.asm:3328-3583) evaluates sleep ->
-  -- freeze -> held-in-place -> flinch -> recharge -> disable tick ->
-  -- confusion -> paralysis BEFORE the bide/thrash/trapping handling.
-  if action.special == "recharge" then
-    -- only reaching .HyperBeamCheck consumes the flag (core.asm:3384-
-    -- 3392): sleep/freeze/held/flinch keep the mon recharging next turn
-    if self:preRechargeChecks(user, target) then return end
-    user.mustRecharge = nil
-    self:sayNext(("%s\nmust recharge!"):format(displayName(user)))
-    return
-  end
-  if action.special == "bound" then
-    if not target.trappingTurns then
-      -- the trap ended earlier this turn: the CANNOT_MOVE selection is
-      -- simply lost (ExecutePlayerMove returns immediately on $ff)
+  local function run()
+    -- ghost battles: the ghost never attacks; its whole turn is the
+    -- GetOutText (ExecuteEnemyMove -> PrintGhostText, core.asm:5462-5463)
+    if self.ghost and not user.isPlayer then
+      self:sayNext(self.data.text._GetOutText or "GHOST: Get out...\nGet out...")
       return
     end
-    -- sleep/freeze take precedence over the held-in-place message
-    if self:statusInterrupt(user, target) then return end
-    return
-  end
-  if action.special == "trapping" then
-    if self:statusInterrupt(user, target) then return end
-    self:continueTrapping(user, target)
-    return
-  end
-  if action.special == "bide" then
-    if self:statusInterrupt(user, target) then return end
-    self:continueBide(user, target)
-    return
-  end
 
-  if self:statusInterrupt(user, target) then return end
-  self:performMove(user, target, action, false)
+    -- refresh the held-in-place mirror before the status checks (see
+    -- lockedAction): the victim is held exactly while the opponent's
+    -- trapping bit is set -- including a counter sitting at 0 until the
+    -- end-of-turn CheckNumAttacksLeft clear
+    user.boundTurns = target.trappingTurns
+                      and math.max(1, target.trappingTurns) or nil
+
+    -- trainer class AI actions (engine/battle/trainer_ai.asm)
+    if action.special == "aiItem" then
+      self.aiUses = (self.aiUses or 1) - 1
+      for _, m in ipairs(TrainerAI.useItem(self, action.item)) do
+        self:sayNext(prefixEnemy(m, self.enemy))
+      end
+      self:drainNext()
+      require("src.core.Sound").play(self.data, "Heal_Ailment")
+      return
+    end
+    if action.special == "aiSwitch" then
+      self.aiUses = (self.aiUses or 1) - 1
+      local previous = self.enemy
+      local oldName = self.enemy.name
+      self.enemyIndex = action.index
+      self.enemy = makeBattler(self.data, self.enemyParty[action.index], false)
+      -- EnemySendOutFirstMon (core.asm:1314-1315): clears player's trap
+      clearTrapping(self.player)
+      self:syncSides()
+      Runtime.emit("battle.battler_switched", {
+        battle = self, side = self.sides[2], battler = self.enemy,
+        previous = previous,
+      })
+      self.aiUses = self:aiUsesFor()
+      markSeen(self.game, self.enemy.mon.species)
+      -- _AIBattleWithdrawText: "X with-/drew Y!"
+      self:sayNext(("%s with-\ndrew %s!"):format(self.trainer.name, oldName))
+      self:sayNext(("%s sent\nout %s!"):format(self.trainer.name, self.enemy.name))
+      return
+    end
+
+    -- special locked actions.  All of them still run the status gauntlet:
+    -- CheckPlayerStatusConditions (core.asm:3328-3583) evaluates sleep ->
+    -- freeze -> held-in-place -> flinch -> recharge -> disable tick ->
+    -- confusion -> paralysis BEFORE the bide/thrash/trapping handling.
+    if action.special == "recharge" then
+      -- only reaching .HyperBeamCheck consumes the flag (core.asm:3384-
+      -- 3392): sleep/freeze/held/flinch keep the mon recharging next turn
+      if self:preRechargeChecks(user, target) then return end
+      user.mustRecharge = nil
+      self:sayNext(("%s\nmust recharge!"):format(displayName(user)))
+      return
+    end
+    if action.special == "bound" then
+      if not target.trappingTurns then
+        -- the trap ended earlier this turn: the CANNOT_MOVE selection is
+        -- simply lost (ExecutePlayerMove returns immediately on $ff)
+        return
+      end
+      -- sleep/freeze take precedence over the held-in-place message
+      if self:statusInterrupt(user, target) then return end
+      return
+    end
+    if action.special == "trapping" then
+      if self:statusInterrupt(user, target) then return end
+      self:continueTrapping(user, target)
+      return
+    end
+    if action.special == "bide" then
+      if self:statusInterrupt(user, target) then return end
+      self:continueBide(user, target)
+      return
+    end
+
+    if self:statusInterrupt(user, target) then return end
+    self:performMove(user, target, action, false)
+  end
+  run()
+  -- after announce/anim/effect text (pokered DrawHUDsAndHPBars)
+  self:actNext(function() self:syncShownStatus() end)
 end
 
 -- Sleep / confusion onomatopoeia from Check*StatusConditions
@@ -2732,51 +2776,37 @@ function BattleState:enemyMonFainted()
     end
     if nextIndex then
       self.enemyIndex = nextIndex
-      -- SHIFT battle style (the default): announce the next mon and
-      -- offer a free switch (SET skips the prompt)
+      -- EnemySendOutFirstMon (core.asm:1366-1443): SHIFT offers a free
+      -- switch when party count > 1, the active mon is alive, and the
+      -- battle-style bit is clear.  pokered counts party slots (not
+      -- remaining HP); SET / single-mon / fainted active skip the prompt.
       local nextMon = self.enemyParty[self.enemyIndex]
       local nextName = nextMon.nickname or self.data.pokemon[nextMon.species].name
-      local style = (self.game.save.options or {}).battleStyle or "shift"
-      local healthy = 0
-      for _, mon in ipairs(self.game.save.party) do
-        if mon.hp > 0 then healthy = healthy + 1 end
-      end
-      if style ~= "set" and healthy > 1 and self.player.mon.hp > 0 then
-        self:say(("%s is\nabout to use\n%s!"):format(self.trainer.name, nextName))
-        self:say(("Will %s\nchange POKéMON?"):format(self.game.save.player.name))
-        local game = self.game
-        self:ui(function()
-          local ChoiceBox = require("src.ui.ChoiceBox")
-          return ChoiceBox.new(game, function(yes)
+      local style = tostring((self.game.save.options or {}).battleStyle or "shift")
+        :lower()
+      local partyCount = #self.game.save.party
+      -- SwitchPlayerMon runs AFTER TrainerSentOutText (core.asm:1436-1443)
+      local shiftSwitchMon = nil
+      if style ~= "set" and partyCount > 1 and self.player.mon.hp > 0 then
+        -- _TrainerAboutToUseText: "X is" / "about to use" then cont nick,
+        -- then para "Will PLAYER" / "change POKéMON?" with YES/NO.
+        self:say(("%s is\nabout to use"):format(self.trainer.name))
+        self:say(("%s!"):format(nextName))
+        self:sayChoice(
+          ("Will %s\nchange POKéMON?"):format(self.game.save.player.name),
+          function(yes)
             if not yes then return end
+            local game = self.game
             Screens.push(game, "PartyMenu", {
               battle = self,
+              forceSwitch = true,
               onSwitch = function(mon)
                 if mon ~= self.player.mon and mon.hp > 0 then
-                  local previous = self.player
-                  self.player = makeBattler(self.data, mon, true, game.save)
-                  clearTrapping(self.enemy) -- SendOutMon clears foe trap
-                  self:syncSides()
-                  Runtime.emit("battle.battler_switched", {
-                    battle = self, side = self.sides[1],
-                    battler = self.player, previous = previous,
-                  })
-                  self:markParticipant()
-                  self.nextInsert = 0
-                  self.sendingOut = true
-                  self:sayNext(self:sendOutText(self.player.name))
-                  self:animNext("POOF_ANIM", false)
-                  self:actNext(function()
-                    self.sendingOut = false
-                    -- SendOutMon (core.asm:1757-1762): poof, then the grow-in
-                    self:startGrowIn(self.player)
-                    require("src.core.Sound").playCry(self.data, self.player.mon.species)
-                  end)
+                  shiftSwitchMon = mon
                 end
               end,
             })
           end)
-        end)
       end
       self:act(function()
         local previous = self.enemy
@@ -2803,6 +2833,29 @@ function BattleState:enemyMonFainted()
           self:actNext(function()
             require("src.core.Sound").playCry(self.data, self.enemy.mon.species)
           end)
+        end)
+      end)
+      -- SwitchPlayerMon after the enemy is out (core.asm:1436-1443)
+      self:act(function()
+        local mon = shiftSwitchMon
+        if not mon then return end
+        local previous = self.player
+        self.player = makeBattler(self.data, mon, true, self.game.save)
+        clearTrapping(self.enemy)
+        self:syncSides()
+        Runtime.emit("battle.battler_switched", {
+          battle = self, side = self.sides[1],
+          battler = self.player, previous = previous,
+        })
+        self:markParticipant()
+        self.nextInsert = 0
+        self.sendingOut = true
+        self:sayNext(self:sendOutText(self.player.name))
+        self:animNext("POOF_ANIM", false)
+        self:actNext(function()
+          self.sendingOut = false
+          self:startGrowIn(self.player)
+          require("src.core.Sound").playCry(self.data, self.player.mon.species)
         end)
       end)
       return
@@ -2928,6 +2981,8 @@ function BattleState:openReplacementMenu()
   self:ui(function()
     return self:buildScreen("PartyMenu", {
       battle = self,
+      -- ChooseNextMon: pick immediately (no SWITCH/STATS/CANCEL)
+      forceSwitch = true,
       onSwitch = function(mon)
         if mon.hp <= 0 then
           self:say("There's no will\nto fight!")
@@ -3138,6 +3193,9 @@ end
 
 -- called by BagMenu after an item is used in battle (consumes the turn)
 function BattleState:itemUsed(messages)
+  -- bag cures clear mon.status before the message UI; refresh the HUD
+  -- once control returns (pokered DrawHUDsAndHPBars after item use)
+  self:syncShownStatus()
   for _, m in ipairs(messages or {}) do self:say(m) end
   table.insert(self.queue, { drain = true }) -- potions animate the bar
   self:act(function()
@@ -3159,10 +3217,39 @@ function BattleState:ballMissMessage(shakes)
   return t._ItemUseBallText04 or "Shoot! It was so\nclose too!"
 end
 
+-- AskName (engine/menus/naming_screen.asm): ClearSprites, wild field blank,
+-- PrintText, YES/NO while text stays (TextBox opts.choice). Shared by party
+-- AddPartyMon and SendNewMonToBox (#172).
+function BattleState:askNicknameUI(mon, displayName)
+  local game = self.game
+  self.lockedBall = nil
+  self.blankForAskName = true
+  local TextBox = require("src.render.TextBox")
+  local text = ("Do you want to\ngive a nickname\nto %s?"):format(displayName)
+  local label = game.data.text and game.data.text._DoYouWantToNicknameText
+  if label then
+    -- extractor CONT is \t; TextBox scrolls on \n/\v
+    text = label:gsub("\t", "\n"):gsub("{RAM:?[%w_]*}", displayName)
+  end
+  return TextBox.new(game, text, nil, {
+    choice = function(yes)
+      self.blankForAskName = false
+      if not yes then return end
+      pcall(Screens.push, game, "NamingScreen", {
+        title = "NICKNAME?", maxLen = 10,
+        onDone = function(name)
+          if name and #name > 0 then mon.nickname = name end
+        end,
+      })
+    end,
+  })
+end
+
 -- The caught mon joins the party or a PC box (ItemUseBall .captured,
 -- item_effects.asm:518-566): the caught text, then for a NEW species
--- "New POKéDEX data will be added" + the dex entry page, then the
--- party add (with the nickname ask) or the PC transfer text.
+-- "New POKéDEX data will be added" + the dex entry page, then
+-- AddPartyMon or SendNewMonToBox (both call AskName), then the PC
+-- transfer text when the party was full.
 function BattleState:storeCaughtMon()
   -- ItemUseBall reloads the caught mon via LoadEnemyMonData
   -- (item_effects.asm:472-501), regenerating its move list from the
@@ -3182,31 +3269,20 @@ function BattleState:storeCaughtMon()
       return self:buildScreen("DexEntryMenu", species)
     end)
   end
-  if Party.add(game.save.party, self.enemy.mon) then
-    -- nickname prompt (AskName runs inside AddPartyMon; box mons are
-    -- never offered a nickname)
+  local function askCaughtNickname()
     local caught = self.enemy.mon
     local enemyName = self.enemy.name
     self:uiNext(function()
-      local ChoiceBox = require("src.ui.ChoiceBox")
-      local TextBox = require("src.render.TextBox")
-      return TextBox.new(game, ("Do you want to\ngive a nickname\nto %s?")
-          :format(enemyName), function()
-        game.stack:push(ChoiceBox.new(game, function(yes)
-          if not yes then return end
-          pcall(Screens.push, game, "NamingScreen", {
-            title = "NICKNAME?", maxLen = 10,
-            onDone = function(name)
-              if name and #name > 0 then caught.nickname = name end
-            end,
-          })
-        end))
-      end)
+      return self:askNicknameUI(caught, enemyName)
     end)
+  end
+  if Party.add(game.save.party, self.enemy.mon) then
+    askCaughtNickname()
   else
     destination = "box"
     local boxNum = require("src.pokemon.Boxes").deposit(game.save, self.enemy.mon)
     if boxNum then
+      askCaughtNickname()
       -- _ItemUseBallText07/08 keyed on EVENT_MET_BILL
       local pc = (game.save.flags and game.save.flags.EVENT_MET_BILL)
                  and "BILL's PC" or "someone's PC"
@@ -4041,8 +4117,11 @@ function BattleState:drawHUDs(slide)
   local barData = self:colorMode() and {} or self.data -- gray fill when zoned
   local fx = self.fx
   local hudShake = (fx and fx.hudShakeX) or 0
+  -- FaintEnemyPokemon clears the enemy HUD area; it stays blank through
+  -- TrainerAboutToUseText until DrawEnemyHUDAndHPBar after the next send-out
   if self.enemy and not self.showEnemyTrainer and not self.enemySendingOut
-     and not self:growInScale(self.enemy) and slide == 0 then
+     and not self:growInScale(self.enemy) and slide == 0
+     and not self.enemy.fainted then
     -- enemy HUD (DrawEnemyHUDAndHPBar): name row 0, <LV>+level (4,1),
     -- HP bar (2,2) with the vertical tick at (1,2), underline row 3;
     -- AnimationShakeEnemyHUD nudges just this block via SCX
@@ -4052,8 +4131,8 @@ function BattleState:drawHUDs(slide)
     end
     love.graphics.setColor(0, 0, 0, 1)
     Font.draw(self.enemy.name, nameX(1, self.enemy.name), 0)
-    if self.enemy.mon.status then
-      Font.draw(self:statusLabel(self.enemy.mon), 40, 8)
+    if self.enemy.shownStatus then
+      Font.draw(self:statusLabel({ status = self.enemy.shownStatus }), 40, 8)
     else
       hudTile(0x6E, 32, 8) -- <LV>
       Font.draw(tostring(self.enemy.mon.level), 40, 8)
@@ -4100,8 +4179,8 @@ function BattleState:drawHUDs(slide)
     -- the tick at (18,10) and the triangle at (9,11)
     love.graphics.setColor(0, 0, 0, 1)
     Font.draw(self.player.name, nameX(10, self.player.name), 56)
-    if self.player.mon.status then
-      Font.draw(self:statusLabel(self.player.mon), 120, 64)
+    if self.player.shownStatus then
+      Font.draw(self:statusLabel({ status = self.player.shownStatus }), 120, 64)
     else
       hudTile(0x6E, 112, 64) -- <LV>
       Font.draw(tostring(self.player.mon.level), 120, 64)
@@ -4207,6 +4286,13 @@ function BattleState:drawTextArea()
 end
 
 function BattleState:draw()
+  -- AskName: ClearSprites + wild ClearScreenArea — white field under the
+  -- nickname TextBox / YES/NO (naming_screen.asm); overlays draw on top.
+  if self.blankForAskName then
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle("fill", 0, 0, 160, 144)
+    return
+  end
   local fx = self.fx
   -- window shakes (SE_SHAKE_SCREEN / the enemy-hit vertical shake);
   -- the animations-off fallback keeps the old +-2 alternation

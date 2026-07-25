@@ -270,10 +270,21 @@ end
 -- via USB or a file manager, no runtime permission needed), and this scans
 -- it directly through love.filesystem -- already mounted at the physfs
 -- root, so no io.* absolute-path handling is needed.
-local function scanForRom()
+--
+-- Only a .gb whose SHA maps to a version that is not yet ready counts as
+-- pending.  GameActivity always writes the SAF pick to picked_rom.gb, so a
+-- naive "first .gb wins" scan would re-import Red when the player tries to
+-- add Blue (issue #167).
+local function findPendingRom(ready)
   for _, name in ipairs(love.filesystem.getDirectoryItems("")) do
     if name:lower():match("%.gb$") and love.filesystem.getInfo(name, "file") then
-      return name
+      local data = love.filesystem.read(name)
+      if type(data) == "string" and #data == 1024 * 1024 then
+        local version = GameVersion.forSha1(sha1(data))
+        if version and not ready[version] then
+          return name, data
+        end
+      end
     end
   end
   return nil
@@ -439,12 +450,12 @@ function RomImporter.new(onComplete, opts)
     self.romName[version] = "pokemon_" .. info.id .. ".gb"
   end
 
-  -- Android has no native picker until the player copies a ROM into the
-  -- external folder; import any .gb already there (routed by SHA-1) unless
-  -- both games are already imported.
+  -- Android: import a save-dir .gb that is not yet ready (USB drop or a
+  -- leftover SAF pick), routed by SHA-1.  Already-imported carts are skipped
+  -- so a stale picked_rom.gb cannot block the opposite version.
   if android and not (self.ready.red and self.ready.blue) then
-    local name = scanForRom()
-    if name then self:startData(love.filesystem.read(name), name) end
+    local name, data = findPendingRom(self.ready)
+    if name then self:startData(data, name) end
   end
 
   -- Mouse-wheel scroll for the save-slot / mods lists.  main.lua (off limits)
@@ -480,13 +491,13 @@ end
 -- The system picker runs as a separate top activity, so LOVE's own
 -- love.focus/love.visible pause while it's up (see main.lua) -- once the
 -- player returns here with a file picked, GameActivity has already copied
--- it into the folder scanForRom checks, so a rescan on refocus picks it up
--- without the player needing to tap the button again.
+-- it into the save directory, so a pending-ROM rescan on refocus picks it
+-- up without the player needing to tap the button again.
 function RomImporter:focus(f)
   if not (f and self.android and self.workState ~= "working") then return end
   if self.ready.red and self.ready.blue then return end
-  local name = scanForRom()
-  if name then self:startData(love.filesystem.read(name), name) end
+  local name, data = findPendingRom(self.ready)
+  if name then self:startData(data, name) end
 end
 
 function RomImporter:setError(message, version)
@@ -586,6 +597,12 @@ function RomImporter:startData(data, displayName)
     self.returning[version] = false
     self.romName[version] = (displayName
       and (displayName:match("[^/\\]+$") or displayName)) or self.romName[version]
+    -- Android: drop the consumed save-dir .gb (picked_rom.gb or a USB copy)
+    -- so the next Choose / focus cannot treat it as a fresh pending ROM.
+    if self.android and type(displayName) == "string"
+        and not displayName:find("[/\\]") then
+      love.filesystem.remove(displayName)
+    end
     self.importing = nil
     self.workState = "complete"
     self.completeVersion = version
@@ -740,9 +757,12 @@ function RomImporter:choose(version)
   if self.workState == "working" then return end
   self.chooseVersion = version or "red"
   if self.android then
-    local name = scanForRom()
+    -- Prefer a not-yet-imported .gb already in the save dir (USB copy, or a
+    -- fresh SAF pick).  Never reuse an already-imported cart's file -- that
+    -- was the #167 failure mode (second Choose just re-extracted Red).
+    local name, data = findPendingRom(self.ready)
     if name then
-      self:startData(love.filesystem.read(name), name)
+      self:startData(data, name)
     elseif not love.system.pickFile() then
       -- Picker unavailable (API < 19, or no document-picker app installed):
       -- fall back to the USB folder-drop path as a friendly notice, not an

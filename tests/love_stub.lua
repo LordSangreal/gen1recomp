@@ -103,6 +103,7 @@ stub.math = {
 stub.filesystem = {
   write = function(name, content) files[name] = content return true end,
   read = function(name) return files[name] end,
+  remove = function(name) files[name] = nil return true end,
   -- directories are implied by key prefixes ("mods/x/manifest.json")
   getInfo = function(name)
     if files[name] then return { type = "file" } end
@@ -118,13 +119,25 @@ stub.filesystem = {
   end,
   getDirectoryItems = function(name)
     local seen, items = {}, {}
-    local prefix = name .. "/"
-    for key in pairs(files) do
-      if key:sub(1, #prefix) == prefix then
-        local child = key:sub(#prefix + 1):match("^[^/]+")
+    name = name or ""
+    -- "" / "/" = save-dir root (RomImporter Android ROM scan)
+    if name == "" or name == "/" then
+      for key in pairs(files) do
+        local child = key:match("^[^/]+")
         if child and not seen[child] then
           seen[child] = true
           items[#items + 1] = child
+        end
+      end
+    else
+      local prefix = name .. "/"
+      for key in pairs(files) do
+        if key:sub(1, #prefix) == prefix then
+          local child = key:sub(#prefix + 1):match("^[^/]+")
+          if child and not seen[child] then
+            seen[child] = true
+            items[#items + 1] = child
+          end
         end
       end
     end

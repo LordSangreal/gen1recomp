@@ -5,6 +5,20 @@ that runs before `Game:load`. Besides ROM import (see the file's own header)
 it hosts a tabbed shell covering per-game save slots and a mod manager. This
 file documents the runtime model; the visual spec lives separately.
 
+## Android multi-ROM import
+
+On Android, `love.system.pickFile()` opens the Storage Access Framework
+picker (`GameActivity.showRomFilePicker`); the chosen file is copied to
+`picked_rom.gb` in the app save directory. `RomImporter` then imports on
+refocus / Choose via `findPendingRom`: only a 1 MiB `.gb` whose SHA-1 maps
+to a version that is **not** yet ready counts as pending. A leftover
+`picked_rom.gb` from Red therefore cannot block Blue's Choose (issue #167).
+After a successful import the consumed save-dir `.gb` is removed.
+
+**Manual check (device/emulator):** import Red → switch to Blue → Choose →
+system file picker must appear (not a silent Red re-extract) → pick Blue →
+Blue becomes ready beside Red.
+
 ## Tab structure
 
 `self.tab` is one of `"red"`, `"blue"`, `"yellow"`, `"mods"`. The tab bar

@@ -718,16 +718,13 @@ function OverworldState:update(dt)
   end
   if self.healAnim then
     local ha = self.healAnim
-    local Music = require("src.core.Music")
-    if ha.jinglePlaying and not ha.jingleDone then
-      ha.jingleDone = not Music.oneShotPlaying()
-    end
     local ev = OverworldState.stepHealAnim(ha)
     if ev == "ball" then
       require("src.core.Sound").play(Game.data, "Healing_Machine")
     elseif ev == "jingle" then
-      ha.jinglePlaying = Music.playOnce(Game.data, "Music_PkmnHealed")
-      ha.jingleDone = not ha.jinglePlaying
+      -- playOnce restores the map theme when the jingle ends; we no longer
+      -- block the fighting-fit text on that (#157)
+      require("src.core.Music").playOnce(Game.data, "Music_PkmnHealed")
     elseif ev == "done" then
       local done = ha.onDone
       self.healAnim = nil
@@ -1511,6 +1508,15 @@ function OverworldState:tryHiddenObject(fx, fy)
     end
   end
 
+  -- PrintTrashText: SS Anne kitchen + Vermilion Gym non-puzzle can
+  for _, h in ipairs(extras.printTrash and extras.printTrash[self.map.id] or {}) do
+    if h.x == fx and h.y == fy then
+      Game.stack:push(TextBox.new(Game, txt._VermilionGymTrashText
+        or "Nope, there's\nonly trash here."))
+      return true
+    end
+  end
+
   -- the Vermilion Gym trash can lock puzzle
   if self.map.id == "VERMILION_GYM" then
     for _, h in ipairs(extras.trashCans.cans or {}) do
@@ -2190,13 +2196,10 @@ function OverworldState:dexRating()
   Game.stack:push(TextBox.new(Game, completion .. "\f" .. rating))
 end
 
--- AnimateHealingMachine (engine/overworld/healing_machine.asm): the
--- monitor lights, then one ball per party mon appears every 30 frames
--- (SFX_HEALING_MACHINE each); the healed jingle plays while the machine
--- sprites flash 8 times (an OBP1 xor every 10 frames), then a 32-frame
--- beat once the jingle ends.  Pure per-frame step over the ha table
--- ({ balls, lit, timer, visible, jingleDone }); returns "ball"/"jingle"/
--- "done" when the caller must fire the matching side effect.
+-- AnimateHealingMachine (engine/overworld/healing_machine.asm): balls
+-- every 30 frames, then jingle + FlashSprite8Times (8 x 10).  #157: skip
+-- pokered's post-flash .waitLoop2 / DelayFrames 32 so fighting-fit is
+-- immediate; jingle still plays and restoreMap runs when it ends.
 function OverworldState.stepHealAnim(ha)
   ha.timer = ha.timer + 1
   ha.phase = ha.phase or "balls"
@@ -2219,16 +2222,10 @@ function OverworldState.stepHealAnim(ha)
       ha.visible = not ha.visible
       ha.flashes = ha.flashes + 1
       if ha.flashes >= 8 then
-        ha.phase = "wait"
         ha.visible = true
+        ha.phase = "done"
+        return "done"
       end
-    end
-  elseif ha.phase == "wait" then
-    -- .waitLoop2: hold until the jingle ends, then 32 more frames
-    if not ha.jingleDone then
-      ha.timer = 0
-    elseif ha.timer >= 32 then
-      return "done"
     end
   end
 end
@@ -2405,19 +2402,34 @@ function OverworldState:checkVictoryRewards(trainerClass, partyIndex)
       Commands.hide_object(ctx, entry[1], entry[2])
     end
   end
-  local lines = {}
   if reward.badge then
     Game.save.inventory[reward.badge] = 1
-    local name = Game.data.items[reward.badge] and Game.data.items[reward.badge].name
-                 or reward.badge
-    table.insert(lines, ("%s received\nthe %s!"):format(Game.save.player.name, name))
   end
   if reward.item then
     local inv = Game.save.inventory
     inv[reward.item] = (inv[reward.item] or 0) + 1
-    local name = Game.data.items[reward.item] and Game.data.items[reward.item].name
-                 or reward.item
-    table.insert(lines, ("%s received\n%s!"):format(Game.save.player.name, name))
+    local idef = Game.data.items[reward.item]
+    -- GiveItem -> CopyToStringBuffer for "{RAM:wStringBuffer}" received texts
+    Game.stringBuffer = idef and idef.name or reward.item
+  end
+  local lines = {}
+  if reward.dialogue then
+    local text = Game.data.text or {}
+    for _, label in ipairs(reward.dialogue) do
+      if text[label] and text[label] ~= "" then
+        table.insert(lines, text[label])
+      end
+    end
+  elseif reward.badge or reward.item then
+    if reward.badge then
+      local name = Game.data.items[reward.badge] and Game.data.items[reward.badge].name
+                   or reward.badge
+      table.insert(lines, ("%s received\nthe %s!"):format(Game.save.player.name, name))
+    end
+    if reward.item then
+      local name = Game.stringBuffer or reward.item
+      table.insert(lines, ("%s received\n%s!"):format(Game.save.player.name, name))
+    end
   end
   if #lines > 0 then
     Game.stack:push(TextBox.new(Game, table.concat(lines, "\f")))
@@ -2439,6 +2451,8 @@ end
 -- interposed NPCs / walls -- but unsigned 8-bit Y makes a sprite exactly 4
 -- tiles north of the player sit at Y=$fc, so |$3c-$fc|=$c0 and a range-4
 -- DOWN trainer does not engage that tile (Route 9 Bug Catcher / issue #76).
+-- Off-screen sprites (IMAGEINDEX=$ff) never engage: without that gate, the
+-- same 8-bit wrap makes far same-row trainers look in-range (#153/#183).
 local PLAYER_SCREEN_X, PLAYER_SCREEN_Y = 0x40, 0x3c
 local function u8(n) return n % 256 end
 local function calcDiff(a, b)
@@ -2454,6 +2468,14 @@ local function trainerSightPixelDist(npc, player, horizontal)
                   u8(PLAYER_SCREEN_Y + (npc.cellY - player.cellY) * 16))
 end
 
+-- CheckSpriteAvailability (movement.asm): wXCoord/wYCoord = player - 4;
+-- visible when sprite is in [wCoord, wCoord + SCREEN_*/2 - 1] (GB 10x9).
+local function trainerSpriteOnScreen(npc, player)
+  local dx = npc.cellX - player.cellX
+  local dy = npc.cellY - player.cellY
+  return dx >= -4 and dx <= 5 and dy >= -4 and dy <= 4
+end
+
 -- STAY trainers with a facing spot the player crossing their line of
 -- sight (range from the extracted trainer headers), walk up and battle.
 function OverworldState:checkTrainerSight()
@@ -2466,7 +2488,8 @@ function OverworldState:checkTrainerSight()
     -- walkers included (they sight between steps)
     if d.trainerClass and not npc.moving
        and not self:trainerDefeated(npc)
-       and not mapScripts.talkScript(self.map.id, d.text) then
+       and not mapScripts.talkScript(self.map.id, d.text)
+       and trainerSpriteOnScreen(npc, p) then
       local header = Game.data:trainerHeader(self.map.def.label, d.index)
       local range = header and header.range or 0
       local vec = DIRVEC[npc.facing]
@@ -3210,7 +3233,7 @@ function OverworldState:takeWarp(warpDef)
     self:startWarpTo(destMap, x, y, facing)
     return
   end
-  self.doorWarp = true -- door SFX + outdoor walk-out step
+  self.doorWarp = true -- door SFX + PlayerStepOutFromDoor walk-out
   self:startWarpTo(destMap, x, y, facing)
 end
 
@@ -3295,12 +3318,12 @@ function OverworldState:startWarpTo(mapId, x, y, facing, onDone, opts)
       local outdoor = Map.isOutdoor(self.map.def)
       require("src.core.Sound").play(Game.data,
                                      outdoor and "Go_Outside" or "Go_Inside")
-      -- stepping out of an outdoor door/cave entrance (the original's
-      -- walk-out). Auto-walk leaves the mat, so the arrival disable
+      -- PlayerStepOutFromDoor (engine/overworld/auto_movement.asm): any
+      -- warp that lands on a door tile auto-steps south once, indoor or
+      -- outdoor. Auto-walk leaves the mat, so the arrival disable
       -- (warpEntryCell / justWarped) is unnecessary -- and would let you
       -- stand on the door without re-entering if you hold back into it.
-      if outdoor and self.player.facing == "down"
-         and self.map:isWarpTileCell(self.player.cellX, self.player.cellY) then
+      if self.map:isDoorTileCell(self.player.cellX, self.player.cellY) then
         self.warpEntryCell = nil
         self.justWarped = false
         self:scriptMove(self.player, "down", 1)
