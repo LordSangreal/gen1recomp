@@ -12,6 +12,7 @@ local Map = require("src.world.Map")
 local MapLoader = require("src.world.MapLoader")
 local NPC = require("src.world.NPC")
 local PaletteFX = require("src.render.PaletteFX")
+local Pipelines = require("src.render.Pipelines")
 local Player = require("src.world.Player")
 local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
@@ -20,6 +21,7 @@ local Tilt = require("src.render.Tilt")
 local TextBox = require("src.render.TextBox")
 local Transition = require("src.render.Transition")
 local Warp = require("src.world.Warp")
+local Zoom = require("src.render.Zoom")
 
 -- isOverworld marks the live world state for WorldAPI's stack scan
 local OverworldState = { isOpaque = true, isOverworld = true }
@@ -3539,11 +3541,22 @@ function OverworldState:drawWorld()
   -- tilt is active).  So the ground draw calls below never change with tilt;
   -- only the sprite/FX draw path below them branches.  The sorts below only
   -- reorder (no draws), so they run once for both paths.
-  local tilt = Tilt.active()
-  self.map.renderer:drawBorderFill(cam.x, bgY, vw, vh)
-  self.map.renderer:draw(cam.x, bgY, vw, vh)
-  for _, nb in ipairs(self.neighbors) do
-    nb.map.renderer:drawMapOnly(cam.x - nb.ox, bgY - nb.oy, vw, vh)
+  -- A render pipeline (src/render/Pipelines.lua) replaces the ground draw
+  -- entirely with geometry of its own, so it is decided before tilt and
+  -- wins over it.  It falls back to the tilt/flat path whenever it cannot
+  -- run this frame -- headless, a driver with no depth canvas, or a mod
+  -- that threw -- so no caller ever sees a blank frame.
+  local pipelineId = Pipelines.worldPipeline()
+  local tilt = (not pipelineId) and Tilt.active()
+  -- the pipeline's finished world image, once it has run; nil keeps every
+  -- path below on the vanilla flat/tilt draw
+  local override
+  if not pipelineId then
+    self.map.renderer:drawBorderFill(cam.x, bgY, vw, vh)
+    self.map.renderer:draw(cam.x, bgY, vw, vh)
+    for _, nb in ipairs(self.neighbors) do
+      nb.map.renderer:drawMapOnly(cam.x - nb.ox, bgY - nb.oy, vw, vh)
+    end
   end
   -- per-billboard SGB palette source; only needed (and only paid for) when
   -- tilting.  nil headless / on stale palettes -> billboards go uncolorized.
@@ -3774,7 +3787,114 @@ function OverworldState:drawWorld()
     end
   end
 
-  if not tilt then
+  if pipelineId then
+    -- === PIPELINE PATH: a mod owns the world pass. ======================
+    -- It renders terrain and characters however it likes and hands back one
+    -- window-resolution image; the field FX stay ordinary 2D draws
+    -- composited on top by ctx.drawFx, each anchored to where its ground
+    -- point projects under the pipeline's own camera.  That is the direct
+    -- analogue of what :billboard does for tilt, and it keeps exactly one
+    -- copy of every effect: the closures above are the ones that run.
+    local pw, ph = love.graphics.getDimensions()
+    local pscale = Zoom.scale(Game.renderer:fitScale())
+    local ctx = {
+      state = self, cam = cam, vw = vw, vh = vh, bgY = bgY,
+      width = pw, height = ph, scale = pscale,
+      level = Pipelines.level(pipelineId),
+      -- the SGB world palette a map draws under; nil in the true-colour
+      -- modes, whose art is already baked (and must not be re-mapped)
+      paletteFor = function(map)
+        return PaletteFX.pal(Game.data, self:paletteNameFor(map or self.map))
+      end,
+      spriteColors = function(map)
+        if PaletteFX.usesGbcPack() then return nil end
+        return PaletteFX.pal(Game.data, self:paletteNameFor(map or self.map))
+      end,
+      fx = { heal = fxHeal, dust = fxDust, cutTree = fxCutTree,
+             emote = fxEmote, dark = fxDark, bird = fxBird, rod = fxRod },
+    }
+    -- Draw every active field FX into the finished scene.  `project(wx, wy)`
+    -- maps a world point to canvas pixels (nil when it is behind the
+    -- camera) and `scale` is canvas pixels per world pixel; the pipeline
+    -- owns the camera, this owns where each effect belongs and how the
+    -- closures' flat coordinates are slid onto the projected anchor.
+    -- Deliberately unscaled by depth, like :billboard: an effect keeps its
+    -- crisp authored size and only its anchor moves.
+    ctx.drawFx = function(project, scale)
+      scale = scale or pscale
+      local colors = ctx.spriteColors()
+      local function at(drawFn, wx, wy)
+        if not drawFn then return end
+        local sx, sy = project(wx, wy)
+        if not sx then return end          -- behind the camera
+        local shader = colors and PaletteFX.shader() or nil
+        if shader then
+          PaletteFX.sendColors(shader, colors)
+          love.graphics.setShader(shader)
+        end
+        -- the closures draw relative to the flat foot; slide that onto the
+        -- projected anchor, in world-pixel units inside the scaled transform
+        local fx, fy = wx - cam.x, wy - cam.y
+        love.graphics.push()
+        love.graphics.scale(scale, scale)
+        love.graphics.translate(sx / scale - fx, sy / scale - fy)
+        drawFn()
+        love.graphics.pop()
+        if shader then love.graphics.setShader() end
+      end
+      -- ground-hugging effects sit on the cell they belong to
+      if self.dustAnim then
+        at(fxDust, self.dustAnim.x * 16 + 8, self.dustAnim.y * 16 + 8)
+      end
+      if self.cutAnim then
+        at(fxCutTree, self.cutAnim.x * 16 + 8, self.cutAnim.y * 16 + 16)
+      end
+      if self.healAnim then
+        at(fxHeal, self.healAnim.px + 8, self.healAnim.py + 16)
+      end
+      -- standing effects anchor at the foot of whoever they belong to
+      if self.emote and self.emote.npc then
+        at(fxEmote, self.emote.npc.px + 8, self.emote.npc.py + 16)
+      end
+      if self.flyAnim then
+        at(fxBird, self.player.px + 8, self.player.py + 16)
+      end
+      if self.fishing then
+        at(fxRod, self.player.px + 8, self.player.py + 16)
+      end
+      -- Rock Tunnel darkness is a screen-space light window, not a ground
+      -- object: draw it flat over the finished scene like the tilt path.
+      -- It fills the view in world-pixel units, so it only needs the scale.
+      if self.dark then
+        love.graphics.push()
+        love.graphics.scale(scale, scale)
+        fxDark()
+        love.graphics.pop()
+      end
+    end
+    override = Pipelines.drawWorld(pipelineId, ctx)
+    -- world post-processes (a miniature-diorama blur, a colour grade) fold
+    -- over the finished scene here, so they never touch the UI drawn on top
+    if override then
+      override = Pipelines.worldPresent(override, ctx)
+    end
+    Game.renderer:setWorldOverride(override)
+    if not override then
+      -- The pipeline declined this frame (nothing to draw, or it threw and
+      -- was retired).  The ground pass was skipped on its behalf above, so
+      -- draw it now and fall through to the flat path below rather than
+      -- compositing an empty canvas.
+      self.map.renderer:drawBorderFill(cam.x, bgY, vw, vh)
+      self.map.renderer:draw(cam.x, bgY, vw, vh)
+      for _, nb in ipairs(self.neighbors) do
+        nb.map.renderer:drawMapOnly(cam.x - nb.ox, bgY - nb.oy, vw, vh)
+      end
+    end
+  end
+
+  if override then
+    -- the pipeline owns the whole frame; nothing else draws into the world
+  elseif not tilt then
     -- === FLAT PATH: everything into the one world canvas, as before =====
     -- OBP-baked sprites replay after the zone pass in GBC mode, so their
     -- grass feet-overdraw must replay over them too, colorized with the

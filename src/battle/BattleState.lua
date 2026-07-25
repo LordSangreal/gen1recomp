@@ -173,6 +173,14 @@ local function grayImage(img)
   return getImage(meta.path) or img
 end
 
+-- the asset path a loaded battle image came from (nil for the headless
+-- stub images), so the battle_sprite_scales registry can be looked up by
+-- the same path data references
+local function imagePathOf(img)
+  local m = imageMeta[img]
+  return m and m.path
+end
+
 -- the image a battler pic actually draws with this frame
 function BattleState:picImage(img)
   if self.grayPics then return grayImage(img) end
@@ -3449,12 +3457,15 @@ function BattleState:fxFaintActive(battler)
          and fx.faint.frames > 0 or false
 end
 
--- vertical slide offset for a fainting battler (the player's pic is
--- drawn 2x, so it slides 2x as fast to sink at the same visual rate)
-function BattleState:fxFaintOffset(battler)
+-- vertical slide offset for a fainting battler.  The offset is in screen
+-- pixels, so it scales with the pic's draw scale (the player's default 2x
+-- sinks 2x as fast to sink at the same visual rate); a mod scale composes
+-- the same way.  scale defaults to the vanilla side scale when unknown.
+function BattleState:fxFaintOffset(battler, scale)
   local fx = self.fx
   if self:fxFaintActive(battler) then
-    return (30 - fx.faint.frames) * 2 * (battler.isPlayer and 2 or 1)
+    scale = scale or (battler.isPlayer and 2 or 1)
+    return (30 - fx.faint.frames) * 2 * scale
   end
   return 0
 end
@@ -3550,7 +3561,7 @@ function BattleState:drawBattlerPic(battler, x, y, scale)
     return
   end
   if self:fxFaintActive(battler) then
-    local off = self:fxFaintOffset(battler)
+    local off = self:fxFaintOffset(battler, scale)
     local visible = img:getHeight() - math.floor(off / scale)
     if visible > 0 then
       local quad = love.graphics.newQuad(0, 0, img:getWidth(), visible,
@@ -3847,6 +3858,63 @@ function BattleState:drawAnimLayer(colorized)
   end
 end
 
+-- ------------------------------------------------------------------
+-- Mod-facing battle sprite scaling.  The enemy front pic draws at 1x and
+-- the player back pic at 2x on the GB; a mod can override either per
+-- species (pokemon.battleScaleFront / battleScaleBack) or per image path
+-- (the battle_sprite_scales registry, which is the only handle on the
+-- non-species pics like the trainer back).  These resolvers and the
+-- placement math are pure (no love.*) so the grounding contract -- feet
+-- pinned at any scale -- is unit-tested directly.
+-- ------------------------------------------------------------------
+
+-- the vanilla scale for a side: enemy front 1x, player back 2x
+BattleState.BATTLE_SCALE_DEFAULT = { front = 1, back = 2 }
+
+-- image-level override for an asset path, or nil.  scales is the merged
+-- data.battle_sprite_scales table (record id -> { path, scale }).
+function BattleState.imageBattleScale(scales, path)
+  if not scales or not path then return nil end
+  for id, rec in pairs(scales) do
+    if id ~= "_owners" and type(rec) == "table" and rec.path == path then
+      return rec.scale
+    end
+  end
+  return nil
+end
+
+-- effective battle scale for a pic: image-level override, else the
+-- species-level override for the side, else the side default.  side is
+-- "front" (enemy) or "back" (player); species may be nil (a non-species
+-- pic like the trainer back, which only image-level scaling reaches).
+function BattleState.resolveBattleScale(data, side, path, species)
+  local img = data and BattleState.imageBattleScale(data.battle_sprite_scales, path)
+  if img then return img end
+  local def = species and data and data.pokemon and data.pokemon[species]
+  local field = side == "back" and "battleScaleBack" or "battleScaleFront"
+  local override = def and def[field]
+  if override then return override end
+  return BattleState.BATTLE_SCALE_DEFAULT[side] or 1
+end
+
+-- Player (back) placement: feet flush on the text-box top (y=96) at any
+-- scale, with the left transparent columns pulled back so opaque pixels
+-- land where hardware's white-on-white columns left them.  Returns the
+-- top-left x, y and the scale (slide/shake offsets are added by the
+-- caller).  Feet stay at 96 for every scale: y + (h - pad) * scale == 96.
+function BattleState.backPlacement(w, h, pad, padL, scale)
+  return 8 - padL * scale, 96 - (h - pad) * scale, scale
+end
+
+-- Enemy (front) placement: given the s=1 slot origin (ex, ey) from the
+-- 7x7 tile layout, keep the bottom edge and horizontal centre pinned as
+-- the pic scales -- the same compensation AnimateSendingOutMon's grow
+-- uses.  Returns top-left x, y and the scale.  The bottom edge stays put
+-- for every scale: y + h * scale == ey + h.
+function BattleState.frontPlacement(ex, ey, w, h, scale)
+  return ex + w * (1 - scale) / 2, ey + h * (1 - scale), scale
+end
+
 -- Front/trainer pics: LoadUncompressedSpriteData centers the sprite in
 -- a 7x7 tile buffer, then CopyUncompressedPicToTilemap places that
 -- buffer at hlcoord 12,0.  Horizontal pad is floor((8-w)/2) tiles;
@@ -3890,16 +3958,23 @@ function BattleState:drawPicsLayer(slide, sx, sy)
     local img = self:picImage(self.enemy.sprite)
     love.graphics.setColor(1, 1, 1, 1)
     local ex, ey = enemyPicXY(img, slide, sx, sy)
+    local s = BattleState.resolveBattleScale(self.data, "front",
+      imagePathOf(img), self.enemy.mon and self.enemy.mon.species)
     local gs = self:growInScale(self.enemy)
     if gs then
       -- AnimateSendingOutMon: the downscaled pic keeps its bottom edge
-      -- and horizontal center pinned to the mon's slot while it grows
-      if gs > 0 then
-        love.graphics.draw(img, ex + img:getWidth() * (1 - gs) / 2,
-                           ey + img:getHeight() * (1 - gs), 0, gs, gs)
+      -- and horizontal center pinned to the mon's slot while it grows --
+      -- the mod scale composes multiplicatively with the grow stage
+      local eff = s * gs
+      if eff > 0 then
+        local dx, dy = BattleState.frontPlacement(ex, ey,
+          img:getWidth(), img:getHeight(), eff)
+        love.graphics.draw(img, dx, dy, 0, eff, eff)
       end
     else
-      self:drawBattlerPic(self.enemy, ex, ey, 1)
+      local dx, dy = BattleState.frontPlacement(ex, ey,
+        img:getWidth(), img:getHeight(), s)
+      self:drawBattlerPic(self.enemy, dx, dy, s)
     end
   end
 
@@ -3913,9 +3988,14 @@ function BattleState:drawPicsLayer(slide, sx, sy)
     local img = self:picImage(self.playerBackPic)
     local pad = imagePadBottom[self.playerBackPic] or 0
     local padL = imagePadLeft[self.playerBackPic] or 0
+    -- the trainer back is a bare pic, not species-keyed, so only an
+    -- image-level battle_sprite_scales entry can rescale it
+    local s = BattleState.resolveBattleScale(self.data, "back",
+      imagePathOf(self.playerBackPic), nil)
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(img, 8 - padL * 2 + slide + sx,
-                       96 - (img:getHeight() - pad) * 2 + sy, 0, 2, 2)
+    local dx, dy = BattleState.backPlacement(img:getWidth(), img:getHeight(),
+      pad, padL, s)
+    love.graphics.draw(img, dx + slide + sx, dy + sy, 0, s, s)
   elseif self.player and self.player.sprite and not hidePlayer
      and not self.sendingOut and not self:fxHidden(self.player) then
     local img = self:picImage(self.player.sprite)
@@ -3923,19 +4003,24 @@ function BattleState:drawPicsLayer(slide, sx, sy)
     -- feet flush on the text box top (y=96), ignoring baked-in padding
     local pad = imagePadBottom[self.player.sprite] or 0
     local padL = imagePadLeft[self.player.sprite] or 0
-    local px = 8 - padL * 2 + sx
+    local s = BattleState.resolveBattleScale(self.data, "back",
+      imagePathOf(self.player.sprite),
+      self.player.mon and self.player.mon.species)
     local gs = self:growInScale(self.player)
     if gs then
       -- the player-side AnimateSendingOutMon grow (after the poof,
-      -- core.asm:1757-1762): feet pinned at y=96, center at x=8+w
-      if gs > 0 then
-        love.graphics.draw(img, px + img:getWidth() * (1 - gs),
-                           96 - (img:getHeight() - pad) * 2 * gs + sy,
-                           0, 2 * gs, 2 * gs)
+      -- core.asm:1757-1762): feet pinned at y=96, horizontal centre
+      -- pinned, mod scale composed with the grow stage
+      local eff = s * gs
+      if eff > 0 then
+        love.graphics.draw(img,
+          8 - padL * s + img:getWidth() * s * (1 - gs) / 2 + sx,
+          96 - (img:getHeight() - pad) * eff + sy, 0, eff, eff)
       end
     else
-      self:drawBattlerPic(self.player, px,
-                          96 - (img:getHeight() - pad) * 2 + sy, 2)
+      local dx, dy = BattleState.backPlacement(img:getWidth(),
+        img:getHeight(), pad, padL, s)
+      self:drawBattlerPic(self.player, dx + sx, dy + sy, s)
     end
   end
   if clipped then

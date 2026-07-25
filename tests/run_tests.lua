@@ -2940,6 +2940,7 @@ runSuites(orderedGlob("tests/mod_*.lua tests/modkit_tests.lua", {
   "tests/mod_constants_tests.lua", "tests/mod_catalog_tests.lua",
   "tests/mod_audio_tests.lua", "tests/mod_world_tests.lua",
   "tests/mod_battle_tests.lua", "tests/mod_graphics_tests.lua",
+  "tests/mod_render_tests.lua", "tests/mod_battle_scale_tests.lua",
   "tests/mod_scripting_tests.lua", "tests/mod_ui_tests.lua",
   "tests/mod_save_tests.lua", "tests/modkit_tests.lua",
 }, {
