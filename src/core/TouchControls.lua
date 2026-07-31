@@ -112,7 +112,11 @@ end
 local function loadImages()
   local img = {}
   for name, path in pairs(IMAGES) do
-    local ok, im = pcall(love.graphics.newImage, path)
+    -- Resolved, not raw: the 3DS build ships these as .t3x (the bundler
+    -- converts and drops the .png).  Without this the pcall below quietly
+    -- fails and the console loses its on-screen controls entirely.
+    local Assets = require("src.render.Assets")
+    local ok, im = pcall(love.graphics.newImage, Assets.resolve(path))
     if not ok then return nil end
     im:setFilter("linear", "linear")
     img[name] = im

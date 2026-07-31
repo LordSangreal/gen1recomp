@@ -1,6 +1,10 @@
 local GameVersion = require("src.core.GameVersion")
 local Strings = require("src.core.Strings")
 local HostShell = require("src.core.HostShell")
+local Console = require("src.core.Console")
+-- for Assets.resolve only: the launcher's own art has to survive the 3DS
+-- bundler rewriting every shipped .png to .t3x
+local Assets = require("src.render.Assets")
 
 local RomImporter = {}
 RomImporter.__index = RomImporter
@@ -281,13 +285,42 @@ end
 -- moment and never the launcher.  pump() only drains OS events into LOVE's
 -- queue -- it dispatches nothing -- so there is no reentry into mousepressed
 -- and the release is still delivered normally on the next frame.
+-- Pointer reads, for platforms that may have no pointer module at all.
+--
+-- LOVE Potion builds no love.mouse: its source/modules directory ships touch,
+-- joystick and keyboard, and nothing else that points.  The launcher polls the
+-- pointer every frame (no move events reach it), so on a console every one of
+-- those reads would index a nil module.  Off-screen coordinates are the honest
+-- answer for a machine with no cursor: they hover nothing, which is what the
+-- hit-testing below should conclude.
+-- Whether there is a cursor to poll and hover with: Android and iOS emulate a
+-- mouse from touch, and the LOVE Potion consoles have no love.mouse at all.
+--
+-- Derived on each read rather than cached in a field at construction, because
+-- importers are also built by hand (setmetatable, a couple of fields) in tests
+-- and would silently lose a derived flag while still setting `android` -- the
+-- inputs are what callers set, so the inputs are what this reads.
+local function pointerless(self)
+  return self.android or self.console ~= nil
+end
+
+local function mousePosition()
+  if not (love.mouse and love.mouse.getPosition) then return -1, -1 end
+  return love.mouse.getPosition()
+end
+
+local function mouseDown(...)
+  if not (love.mouse and love.mouse.isDown) then return false end
+  return love.mouse.isDown(...)
+end
+
 local function releasePointerGrab()
   if not (love.mouse and love.mouse.isDown and love.event and love.event.pump
       and love.timer) then
     return
   end
   local deadline = love.timer.getTime() + 1
-  while love.mouse.isDown(1, 2, 3) do
+  while mouseDown(1, 2, 3) do
     love.event.pump()
     if love.timer.getTime() > deadline then break end
     love.timer.sleep(0.005)
@@ -544,6 +577,11 @@ function RomImporter.new(onComplete, opts)
   -- keeps its historical name so every Android call site stays untouched.
   local mobileOS = love.system.getOS()
   local android = mobileOS == "Android" or mobileOS == "iOS"
+  -- The LOVE Potion consoles ("3DS" / "Switch" / "Wii U", or nil elsewhere).
+  -- They are NOT folded into `android`: that flag also means SAF pickers and
+  -- Files-app export, none of which exist here.  What they share is having no
+  -- pointer, which is what `pointerless` names.
+  local console = Console.name()
   local CacheFs = require("src.import.CacheFs")
   local self = setmetatable({
     onComplete = onComplete,
@@ -552,6 +590,7 @@ function RomImporter.new(onComplete, opts)
     onEditSave = opts.onEditSave,
     onEditTouchControls = opts.onEditTouchControls,
     android = android,
+    console = console,
     ios = mobileOS == "iOS",
     -- One startup poll pass: files dropped through the Files app are swept
     -- into the save dir before Lua boots (GRBootstrap), but no love.focus
@@ -563,11 +602,17 @@ function RomImporter.new(onComplete, opts)
     -- love.touch IS pollable, so where it exists a touch drag can be resolved
     -- inside draw the same way the desktop mouse is.  Where it does not, every
     -- Android path stays exactly as it was: act on press, never arm.
-    touchPollable = android and love.touch ~= nil
+    -- The consoles have a touchscreen too (the 3DS bottom screen, the Wii U
+    -- gamepad, the Switch in handheld mode) and LOVE Potion does build a touch
+    -- module, so they resolve a drag the same pollable way.
+    touchPollable = (android or console ~= nil) and love.touch ~= nil
       and love.touch.getTouches ~= nil and love.touch.getPosition ~= nil,
     tab = "red",          -- active launcher tab: "red"/"blue"/"yellow"/"mods"
-    logo = love.graphics.newImage("assets/logo/logo.png"),
-    bcg = love.graphics.newImage("assets/logo/bcg.png"),
+    -- Through Assets.resolve: on the 3DS these two are .t3x inside the build,
+    -- and these are the very first images the app loads, so an unresolved .png
+    -- here is the whole launcher failing before it draws a single frame.
+    logo = love.graphics.newImage(Assets.resolve("assets/logo/logo.png")),
+    bcg = love.graphics.newImage(Assets.resolve("assets/logo/bcg.png")),
     ready = {}, returning = {}, romName = {},
     importing = nil,      -- the version currently extracting, or nil
     workState = nil,      -- "working" / "complete" / "error" for that import
@@ -639,11 +684,17 @@ function RomImporter.new(onComplete, opts)
   -- Android: import a save-dir .gb/.gbc that is not yet ready (USB drop or a
   -- leftover SAF pick), routed by SHA-1.  Already-imported carts are skipped
   -- so a stale picked_rom.gb cannot block another version.
+  --
+  -- The consoles ride the same scan, and it is their ONLY way in: LOVE Potion
+  -- has no file picker, no drag-and-drop and no shell to fall back on, so a
+  -- 3DS/Switch/Wii U player copies the cart onto the SD card and launches.  The
+  -- scan reads the physfs root, which covers both the save directory and the
+  -- game folder itself, so a ROM sitting next to main.lua is found too.
   local needRom = false
   for _, version in ipairs(GameVersion.ORDER) do
     if not self.ready[version] then needRom = true; break end
   end
-  if android and needRom then
+  if (android or self.console) and needRom then
     local name, data = findPendingRom(self.ready)
     if name then
       self:startData(data, name)
@@ -786,8 +837,9 @@ end
 -- Choose control.  Once the importer is torn down that draw path stops
 -- running, so restore the arrow before handing off to boot (issue #114).
 local function resetPointerCursor(self)
-  if self.android then return end
-  if not (love.mouse.isCursorSupported and love.mouse.isCursorSupported()) then
+  if pointerless(self) then return end
+  if not (love.mouse and love.mouse.isCursorSupported
+      and love.mouse.isCursorSupported()) then
     return
   end
   self.arrowCursor = self.arrowCursor or love.mouse.getSystemCursor("arrow")
@@ -1126,6 +1178,30 @@ end
 function RomImporter:choose(version)
   if self.workState == "working" then return end
   self.chooseVersion = version or "red"
+  if self.console then
+    -- LOVE Potion has no picker of any kind (no love.system.pickFile, no
+    -- drag-and-drop, no shell to fall back on), so the only way in is a file
+    -- already on the SD card.  Rescan, and failing that say exactly where the
+    -- cart has to go rather than opening a dialog that cannot exist.
+    local name, data = findPendingRom(self.ready)
+    if name then
+      self:startData(data, name)
+      return
+    end
+    -- Report the SAVE directory, not the source.  Both are on the scan's read
+    -- path, but the source is inside the executable for a fused (packaged)
+    -- build, so naming it would send the player somewhere they cannot write.
+    -- The save directory is a real SD folder in either layout.
+    self.notice = {
+      version = self.chooseVersion,
+      status = "Copy your .gb/.gbc onto the SD card, into:",
+      detail = (love.filesystem.getSaveDirectory
+          and love.filesystem.getSaveDirectory())
+        or (love.filesystem.getSource and love.filesystem.getSource())
+        or "the game folder",
+    }
+    return
+  end
   if self.android then
     -- Prefer a not-yet-imported .gb/.gbc already in the save dir (USB copy, or
     -- a fresh SAF pick).  Never reuse an already-imported cart's file -- that
@@ -1272,7 +1348,7 @@ end
 function RomImporter:_updatePadCursor(dt)
   -- Real mouse motion yields the pad cursor so desktop users keep a normal
   -- pointer after bumping a stick once.
-  local mx, my = love.mouse.getPosition()
+  local mx, my = mousePosition()
   if self._lastMouseX and self._padCursorActive then
     if math.abs(mx - self._lastMouseX) > 3 or math.abs(my - self._lastMouseY) > 3 then
       self._padCursorActive = false
@@ -1467,23 +1543,54 @@ end
 -- One reusable unit quad, recoloured per call, for every vertical gradient
 -- fill (LOVE has no gradient primitive and a per-frame newMesh would churn
 -- the GPU).  Callers set the blend mode; this only touches colour + geometry.
-local gradMesh
+local gradMesh -- false once resolved unavailable, so the attempt is made once
 local function setGrad(cTop, cBot, aTop, aBot)
-  if not gradMesh then gradMesh = love.graphics.newMesh(4, "fan", "dynamic") end
+  if gradMesh == nil then
+    local ok, mesh = pcall(love.graphics.newMesh, 4, "fan", "dynamic")
+    gradMesh = ok and mesh or false
+  end
+  if not gradMesh then return false end
   gradMesh:setVertices({
     { 0, 0, 0, 0, cTop[1] / 255, cTop[2] / 255, cTop[3] / 255, aTop },
     { 1, 0, 1, 0, cTop[1] / 255, cTop[2] / 255, cTop[3] / 255, aTop },
     { 1, 1, 1, 1, cBot[1] / 255, cBot[2] / 255, cBot[3] / 255, aBot },
     { 0, 1, 0, 1, cBot[1] / 255, cBot[2] / 255, cBot[3] / 255, aBot },
   })
+  return true
 end
 local function fillGrad(x, y, w, h, cTop, cBot, aTop, aBot)
-  setGrad(cTop, cBot, aTop, aBot)
+  if not setGrad(cTop, cBot, aTop, aBot) then return end
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.draw(gradMesh, x, y, 0, w, h)
 end
+-- Whether the rounded-rect clip below can be drawn at all.  love.graphics.stencil
+-- is an 11.x entry point that LOVE 12 replaced, and the LOVE Potion console
+-- backends (3DS/Switch/Wii U) expose no stencil path either, so resolve it once
+-- and let each caller degrade rather than crash the launcher -- which on those
+-- platforms is also what runs the ROM auto-import.
+local stencilOk = nil
+local function hasStencil()
+  if stencilOk == nil then
+    stencilOk = type(love.graphics.stencil) == "function"
+      and type(love.graphics.setStencilTest) == "function"
+  end
+  return stencilOk
+end
+
 -- vertical gradient clipped to a rounded rectangle (via the stencil buffer)
 local function fillGradRounded(x, y, w, h, r, cTop, cBot, aTop, aBot)
+  if not hasStencil() then
+    -- Without a stencil the gradient mesh cannot be clipped to the rounded
+    -- shape, and an unclipped mesh would square off every panel corner in the
+    -- launcher.  Fill the rounded rect with the gradient's vertical midpoint
+    -- instead: the falloff is lost, the silhouette every card and button is
+    -- built from is not.
+    love.graphics.setColor((cTop[1] + cBot[1]) / 510, (cTop[2] + cBot[2]) / 510,
+      (cTop[3] + cBot[3]) / 510, (aTop + aBot) / 2)
+    love.graphics.rectangle("fill", x, y, w, h, r, r)
+    love.graphics.setColor(1, 1, 1, 1)
+    return
+  end
   love.graphics.stencil(function()
     love.graphics.rectangle("fill", x, y, w, h, r, r)
   end, "replace", 1)
@@ -1512,6 +1619,10 @@ end
 -- rounded shape.  phase is 0..1 (left of the button -> right of it).
 local shineMesh
 local function buttonShine(x, y, w, h, r, phase)
+  -- Pure decoration, and it is the stencil that keeps the band inside the
+  -- button: with no stencil, skip it rather than paint a rectangle across the
+  -- panel behind.
+  if not hasStencil() then return end
   if not shineMesh then
     -- triangle strip: three columns (transparent, white, transparent)
     shineMesh = love.graphics.newMesh({
@@ -1691,9 +1802,9 @@ function RomImporter:draw()
   if self._padCursorActive then
     self._mx, self._my = self._padCursor.x, self._padCursor.y
   else
-    self._mx, self._my = love.mouse.getPosition()
+    self._mx, self._my = mousePosition()
   end
-  self._hoverEnabled = self._padCursorActive or not self.android
+  self._hoverEnabled = self._padCursorActive or not pointerless(self)
   self._anyHover = false
   self:_resetFrameRects()
 
@@ -1734,7 +1845,10 @@ function RomImporter:draw()
         verts[#verts + 1] = { cx + math.cos(a) * rx, cy + math.sin(a) * ry, 0, 0,
           PAL.bgBot[1] / 255, PAL.bgBot[2] / 255, PAL.bgBot[3] / 255, 1 }
       end
-      self.bgMesh = love.graphics.newMesh(verts, "fan", "static")
+      -- pcall'd like every other optional GPU object here: a backend without
+      -- meshes still gets the flat PAL.bgBot clear the fan draws over.
+      local ok, mesh = pcall(love.graphics.newMesh, verts, "fan", "static")
+      self.bgMesh = ok and mesh or false
     end
 
     -- CRT vignette: a gentle edge darkening, centred slightly above the middle.
@@ -1748,12 +1862,18 @@ function RomImporter:draw()
         verts[#verts + 1] =
           { cx + math.cos(a) * rx, cy + math.sin(a) * ry, 0, 0, 0, 0, 0, 0.32 }
       end
-      self.vignetteMesh = love.graphics.newMesh(verts, "fan", "static")
+      local ok, mesh = pcall(love.graphics.newMesh, verts, "fan", "static")
+      self.vignetteMesh = ok and mesh or false
     end
 
     -- CRT scanlines: a 1px dark line every 3px, baked into a tiny tile and
     -- drawn once with a repeat-wrapped quad (one draw call, correct alpha).
-    if not self.scanlineImage then
+    --
+    -- Off on the 3DS.  The tile is 1x3, and non-power-of-two textures cannot be
+    -- "repeat"-wrapped on that GPU, so the one draw call this effect is built
+    -- around is exactly the call it cannot make there.  A 240px-tall screen has
+    -- little room for a 3px CRT pitch to read as anything but noise anyway.
+    if not self.scanlineImage and not Console.is3DS() then
       local id = love.image.newImageData(1, 3)
       id:setPixel(0, 0, 0, 0, 0, 0.08)
       id:setPixel(0, 1, 0, 0, 0, 0)
@@ -1762,37 +1882,63 @@ function RomImporter:draw()
       self.scanlineImage:setWrap("repeat", "repeat")
       self.scanlineImage:setFilter("nearest", "nearest")
     end
-    self.scanlineQuad = love.graphics.newQuad(0, 0, width, height, 1, 3)
+    self.scanlineQuad = self.scanlineImage
+      and love.graphics.newQuad(0, 0, width, height, 1, 3) or nil
   end
 
   -- Invert shader: the Boi's Club Games mark is dark ink; on this dark panel it
   -- is rendered white (the design's filter:invert(1)).  Built lazily so a
-  -- headless require never needs a GL context.
-  self.invertShader = self.invertShader or love.graphics.newShader([[
-    vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
-      vec4 p = Texel(tex, tc);
-      return vec4((vec3(1.0) - p.rgb) * color.rgb, p.a * color.a);
-    }
-  ]])
+  -- headless require never needs a GL context, and pcall'd because LOVE Potion
+  -- (3DS/Switch/Wii U) ships no shader compiler at all.  `false` is the
+  -- resolved-unavailable sentinel, so the attempt happens once, not per frame.
+  if self.invertShader == nil then
+    local ok, sh = pcall(love.graphics.newShader, [[
+      vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
+        vec4 p = Texel(tex, tc);
+        return vec4((vec3(1.0) - p.rgb) * color.rgb, p.a * color.a);
+      }
+    ]])
+    self.invertShader = ok and sh or false
+    if not self.invertShader then
+      -- No shader to invert with, and the un-inverted mark is dark ink on a
+      -- near-black panel, i.e. invisible.  Invert it once on the CPU instead;
+      -- it is one small image, and the result draws identically.
+      -- love.image is itself optional (a headless stub omits it), and indexing
+      -- the field is what would raise -- pcall never gets to run on a nil
+      -- module -- so probe the module before the call.
+      local newImageData = love.image and love.image.newImageData
+      local okd, id = false, nil
+      if newImageData then okd, id = pcall(newImageData, "assets/logo/bcg.png") end
+      if okd and id and id.mapPixel then
+        id:mapPixel(function(_, _, r, g, b, a) return 1 - r, 1 - g, 1 - b, a end)
+        local oki, img = pcall(love.graphics.newImage, id)
+        self.bcgInverted = oki and img or nil
+      end
+    end
+  end
 
   -- Shine shader: the same white sweep the active buttons get, but clipped to
   -- the logo's own shape (a soft band brightens the pixels it crosses; fully
-  -- transparent pixels stay transparent).
-  self.shineShader = self.shineShader or love.graphics.newShader([[
-    extern number shinePos;
-    extern number shineW;
-    vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
-      vec4 p = Texel(tex, tc);
-      float band = smoothstep(shineW, 0.0, abs(tc.x - shinePos));
-      return vec4(p.rgb + band * 0.55, p.a) * color;
-    }
-  ]])
+  -- transparent pixels stay transparent).  Decoration only -- where shaders are
+  -- unavailable the logo simply draws without the sweep.
+  if self.shineShader == nil then
+    local ok, sh = pcall(love.graphics.newShader, [[
+      extern number shinePos;
+      extern number shineW;
+      vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
+        vec4 p = Texel(tex, tc);
+        float band = smoothstep(shineW, 0.0, abs(tc.x - shinePos));
+        return vec4(p.rgb + band * 0.55, p.a) * color;
+      }
+    ]])
+    self.shineShader = ok and sh or false
+  end
 
   -- background
   col(PAL.bgBot)
   love.graphics.rectangle("fill", 0, 0, width, height)
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.draw(self.bgMesh)
+  if self.bgMesh then love.graphics.draw(self.bgMesh) end
 
   -- Centered content container (max ~1440 scaled units on very wide windows)
   -- with a responsive side gutter; every column below derives from these.
@@ -2012,15 +2158,18 @@ function RomImporter:draw()
   self.bcgButton = { x = bcgX, y = bcgY, width = bcgDW, height = bcgDH }
 
   local bcgHot = self:_hover(self.bcgButton)
-  love.graphics.setShader(self.invertShader)
+  -- Either the shader inverts self.bcg on the GPU, or self.bcgInverted already
+  -- holds the CPU-inverted copy; both draw through the same two passes.
+  local bcgImg = self.invertShader and self.bcg or (self.bcgInverted or self.bcg)
+  if self.invertShader then love.graphics.setShader(self.invertShader) end
   love.graphics.setBlendMode("add")
   love.graphics.setColor(1, 1, 1, bcgHot and 0.5 or 0.22)
-  love.graphics.draw(self.bcg, bcgX - bcgDW * 0.02, bcgY - bcgDH * 0.02, 0,
+  love.graphics.draw(bcgImg, bcgX - bcgDW * 0.02, bcgY - bcgDH * 0.02, 0,
     bcgScale * 1.04, bcgScale * 1.04)
   love.graphics.setBlendMode("alpha")
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.draw(self.bcg, bcgX, bcgY, 0, bcgScale, bcgScale)
-  love.graphics.setShader()
+  love.graphics.draw(bcgImg, bcgX, bcgY, 0, bcgScale, bcgScale)
+  if self.invertShader then love.graphics.setShader() end
 
   love.graphics.setFont(self.warningFont)
   col(PAL.warning)
@@ -2062,12 +2211,14 @@ function RomImporter:draw()
     logoScale * 1.05, logoScale * 1.05)
   love.graphics.setBlendMode("alpha")
   local shineW = 0.16
-  self.shineShader:send("shinePos", -shineW + ((pulse % 2.8) / 2.8) * (1 + 2 * shineW))
-  self.shineShader:send("shineW", shineW)
-  love.graphics.setShader(self.shineShader)
+  if self.shineShader then
+    self.shineShader:send("shinePos", -shineW + ((pulse % 2.8) / 2.8) * (1 + 2 * shineW))
+    self.shineShader:send("shineW", shineW)
+    love.graphics.setShader(self.shineShader)
+  end
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.draw(self.logo, lx, ly, 0, logoScale, logoScale)
-  love.graphics.setShader()
+  if self.shineShader then love.graphics.setShader() end
 
   -- page scrollbar: the same thin thumb the lists use, against the app edge
   if paged then
@@ -2080,8 +2231,10 @@ function RomImporter:draw()
 
   -- CRT scanlines + vignette, over everything
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.draw(self.scanlineImage, self.scanlineQuad, 0, 0)
-  love.graphics.draw(self.vignetteMesh)
+  if self.scanlineImage then
+    love.graphics.draw(self.scanlineImage, self.scanlineQuad, 0, 0)
+  end
+  if self.vignetteMesh then love.graphics.draw(self.vignetteMesh) end
   love.graphics.setColor(1, 1, 1, 1)
 
   -- drag-to-scroll the save-slot list (polls the pointer; no move/release
@@ -2459,7 +2612,8 @@ function RomImporter:draw()
 
   -- pointer cursor over any interactive element (desktop only)
   if self._hoverEnabled and not self._padCursorActive
-      and love.mouse.isCursorSupported and love.mouse.isCursorSupported() then
+      and love.mouse and love.mouse.isCursorSupported
+      and love.mouse.isCursorSupported() then
     if self._anyHover then
       self.handCursor = self.handCursor or love.mouse.getSystemCursor("hand")
       love.mouse.setCursor(self.handCursor)
@@ -2583,11 +2737,11 @@ function RomImporter:mousepressed(x, y, button)
   end
   -- Whether a press can be ARMED and resolved on release, which needs a
   -- pollable pointer: always on desktop, on Android only where love.touch is.
-  local armDrag = (not self.android) or self.touchPollable
+  local armDrag = (not pointerless(self)) or self.touchPollable
   -- right-click a save-slot row to rename it (#205); desktop only (touch
   -- has no secondary button)
   if button == 2 then
-    if not self.android and self.workState ~= "working" then
+    if not pointerless(self) and self.workState ~= "working" then
       for _, r in ipairs(self.slotRects or {}) do
         if inside(r, x, y) then
           self:_beginRename(self.panelVersion, r.id)
@@ -3211,6 +3365,10 @@ function RomImporter:_drawGamePanel(version, x, y, w, h, paged)
     sfHintText, sfHintCol = sfNotice.text, (sfNotice.ok and PAL.green or PAL.red)
   elseif locked then
     sfHintText, sfHintCol = "Not available yet.", PAL.warning
+  elseif self.console then
+    -- No picker here either, so the .sav moves the same way the ROM did.
+    sfHintText, sfHintCol =
+      "Copy a .sav onto the SD card, next to the game.", PAL.warning
   elseif self.android then
     sfHintText, sfHintCol =
       "Import or export a .sav with the system file picker.", PAL.warning
@@ -3445,7 +3603,7 @@ end
 -- first active touch on Android.  A nil y means "nothing to read" -- the
 -- release branches below do not need one.
 function RomImporter:_pointerHold()
-  if not self.android then return love.mouse.isDown(1), self._my end
+  if not pointerless(self) then return mouseDown(1), self._my end
   if not self.touchPollable then return false, nil end
   local ok, list = pcall(love.touch.getTouches)
   if not ok or type(list) ~= "table" or list[1] == nil then return false, nil end

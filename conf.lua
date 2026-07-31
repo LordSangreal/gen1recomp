@@ -49,6 +49,7 @@ function love.conf(t)
   t.modules.joystick = true
   t.modules.physics = false
 
+
   -- love.system is not loaded during love.conf; love._os is set by the
   -- engine before conf runs (LÖVE 11.x / 11.5).
   local osName = love._os
@@ -91,5 +92,29 @@ function love.conf(t)
     t.accelerometerjoystick = false
   else
     t.window.resizable = true
+  end
+
+  -- Consoles, last: LOVE Potion (3DS / Switch / Wii U) publishes love._console,
+  -- set when the love module initializes and so available here exactly like
+  -- love._os above.  This runs after the branch above because that branch's
+  -- desktop `else` would otherwise re-enable resizing underneath it.
+  if love._console then
+    -- LOVE Potion implements the 12.0 API, so the 11.5 declared above trips its
+    -- version-mismatch notice.  Ask the running engine for its own version
+    -- string rather than hardcoding a second number that would need keeping in
+    -- sync with whichever LOVE Potion release the player installed.
+    t.version = love._version or t.version
+    -- It builds no love.mouse module at all (its source/modules ships touch,
+    -- joystick and keyboard, and nothing that points), so do not ask for one.
+    t.modules.mouse = false
+    -- Consoles own their resolution: the 3DS screens are fixed at 400x240 top
+    -- and 320x240 bottom (800x240 in wide mode), while the Switch and Wii U
+    -- backends set their size at runtime from the dock / TV state.  The desktop
+    -- sizing above is not merely ignored there but actively wrong -- a 480x360
+    -- minimum is larger than the whole 3DS screen -- so drop the fields that
+    -- only ever described a resizable desktop window.
+    t.window.minwidth = nil
+    t.window.minheight = nil
+    t.window.resizable = false
   end
 end

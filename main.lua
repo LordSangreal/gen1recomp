@@ -10,6 +10,38 @@
 
 local editorMode = os.getenv("POKEPORT_EDITOR") == "1" or POKEPORT_EDITOR_MODE == true
 
+-- Crash log, for the console ports.
+--
+-- LÖVE's error screen assumes someone can read it.  On the Nintendo builds
+-- nobody can: the Wii U reports only "terminated by calling coreinit.exit(1)"
+-- to the host, the 3DS closes back to the menu, and neither surfaces the Lua
+-- message or traceback anywhere.  That turns any boot-time error into a silent
+-- exit, which is exactly the failure this port kept hitting.
+--
+-- So persist it.  The save directory is a real folder on the SD card (and on
+-- the emulator's mlc), so the file survives the exit and can be read back
+-- afterwards.  Desktop is unchanged: this only prepends the write, then hands
+-- off to LÖVE's normal handler and its error screen.
+do
+  local previous = love.errorhandler or love.errhand
+  local function handler(msg)
+    pcall(function()
+      local body = table.concat({
+        "gen1recomp crash",
+        "console: " .. tostring(love._console),
+        "os: " .. tostring(love._os),
+        "version: " .. tostring(love._version),
+        "",
+        debug.traceback(tostring(msg), 2),
+      }, "\n")
+      love.filesystem.write("crash.txt", body)
+    end)
+    if previous then return previous(msg) end
+  end
+  love.errorhandler = handler
+  love.errhand = handler   -- 11.x name, still read by some builds
+end
+
 local Game, EditorApp, Importer, TouchEditor
 
 local autopilot -- optional scripted-input dev tool (tests/autopilot.lua)

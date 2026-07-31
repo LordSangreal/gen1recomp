@@ -94,7 +94,11 @@ local CYCLE_FRAMES = 240 -- the original waits ~4s between picks
 
 local function tryImage(path)
   if not path then return nil end
-  local ok, img = pcall(love.graphics.newImage, path)
+  -- Assets.resolve so the shipped title art still loads on the 3DS, where the
+  -- bundler has rewritten it to .t3x.  Generated title art is unaffected: it
+  -- is written as PNG at runtime and has no .t3x sibling to swap to.
+  local Assets = require("src.render.Assets")
+  local ok, img = pcall(love.graphics.newImage, Assets.resolve(path))
   return ok and img or nil
 end
 

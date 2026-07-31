@@ -4,9 +4,12 @@
 # the Windows and Linux builds reuse LÖVE's prebuilt win64 / AppImage
 # binaries, fusing our game.love onto them the same way love.exe does).
 #
-# Usage: scripts/build.sh [mac|win|linux|android|ios|all] [--version X.Y.Z] [--identity "Developer ID Application: ..."]
+# Usage: scripts/build.sh [mac|win|linux|android|ios|all|3ds|switch|wiiu|console]
+#                          [--version X.Y.Z] [--identity "Developer ID Application: ..."]
 #                          [--notary-profile NAME] [--no-notarize]
 #                          [--release]   # ios only: release config instead of debug
+#                          [--unpackaged] # console only: emit loose game files
+#                                         # instead of fusing into the binary
 #
 # Output: dist/mac/gen1recomp-macos.zip
 #         dist/win/gen1recomp-win64.zip
@@ -15,6 +18,8 @@
 #           mobile/android/app/build/outputs/apk/embedNoRecord/)
 #         dist/ios/<Config>-<sdk>/gen1recomp.app (full xcodebuild output stays
 #           under mobile/ios/build/Build/Products/)
+#         dist/console/sdcard/ (LÖVE Potion game folder, runs as-is)
+#         dist/console/gen1recomp-<ver>-console-bundle.zip (for lovebrew.org)
 
 set -euo pipefail
 
@@ -35,6 +40,21 @@ TARGET="all"
 NOTARY_PROFILE="notary-profile"
 NOTARIZE=true
 IOS_RELEASE=false
+# Console bundles ask for a single executable by default.  With packaged=false
+# the bundler has nothing to build for a non-3DS target -- no executable, and no
+# asset conversion outside the 3DS -- so it hands back the source unchanged,
+# which is what dist/console/sdcard already is.
+CONSOLE_PACKAGED=true
+
+# Console targets requested, in bundler names (ctr / hac / cafe), deduped and
+# kept in the order the user asked for them.
+CONSOLE_LIST=""
+add_console() {
+  case " $CONSOLE_LIST " in
+    *" $1 "*) ;;                                     # already requested
+    *) CONSOLE_LIST="${CONSOLE_LIST:+$CONSOLE_LIST }$1" ;;
+  esac
+}
 
 say()  { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mwarn:\033[0m %s\n' "$*" >&2; }
@@ -43,11 +63,21 @@ fail() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 while [ $# -gt 0 ]; do
   case "$1" in
     mac|win|linux|android|ios|all) TARGET="$1" ;;
+    # Console targets accumulate instead of overwriting: one bundle can build
+    # for several consoles at once, and each build_console run clears
+    # dist/console, so `build.sh 3ds wiiu` as two separate runs would leave
+    # only the Wii U output behind.
+    3ds)     TARGET="console"; add_console ctr ;;
+    switch)  TARGET="console"; add_console hac ;;
+    wiiu)    TARGET="console"; add_console cafe ;;
+    console) TARGET="console"; add_console ctr; add_console hac; add_console cafe ;;
     --version) VERSION="$2"; VERSION_EXPLICIT=true; shift ;;
     --identity) IDENTITY="$2"; shift ;;
     --notary-profile) NOTARY_PROFILE="$2"; shift ;;
     --no-notarize) NOTARIZE=false ;;
     --release) IOS_RELEASE=true ;;
+    --packaged) CONSOLE_PACKAGED=true ;;
+    --unpackaged) CONSOLE_PACKAGED=false ;;
     *) fail "unknown argument: $1" ;;
   esac
   shift
@@ -68,8 +98,17 @@ rm -f "$LOVE_FILE"
   tools/rom_manifest.json tools/rom_manifest_blue.json \
   tools/rom_manifest_yellow.json \
   -x '*.DS_Store' 'data/generated/*' 'assets/generated/*')
-if unzip -Z1 "$LOVE_FILE" \
-    | grep -Eq '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/'; then
+# List the archive once into a file, and grep that file rather than a pipe.
+# `unzip -Z1 ... | grep -q ...` looks harmless but is a race under the
+# `set -o pipefail` above: grep -q exits the instant it matches, unzip takes
+# SIGPIPE on the next write, and pipefail then reports the whole pipeline as
+# failed even though the match succeeded.  Every check below matches something
+# in the last 20 of ~300 entries, so unzip is virtually always still writing --
+# which turned every one of these guards into an unconditional "missing file"
+# abort, on every target.
+LOVE_LIST="$WORK/game.love.list"
+unzip -Z1 "$LOVE_FILE" > "$LOVE_LIST"
+if grep -Eq '^(data|assets)/generated/[^/]+|^(data|assets)/generated/.+/' "$LOVE_LIST"; then
   fail "game.love unexpectedly contains generated ROM data"
 fi
 # The editor is only reachable if its entry point and both module directories
@@ -81,7 +120,7 @@ for required in tools/save-editor/App.lua tools/save-editor/Kit.lua \
                 tools/save-editor/panels/Party.lua \
                 tools/rom_manifest.json tools/rom_manifest_blue.json \
                 tools/rom_manifest_yellow.json; do
-  unzip -Z1 "$LOVE_FILE" | grep -qx "$required" \
+  grep -qx "$required" "$LOVE_LIST" \
     || fail "game.love is missing $required"
 done
 say "game.love: $(du -h "$LOVE_FILE" | cut -f1)"
@@ -103,7 +142,10 @@ if printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
     "$ROOT/src/core/Version.lua" > "$stamp_dir/src/core/Version.lua"
   (cd "$stamp_dir" && zip -q "$LOVE_FILE" src/core/Version.lua)
   version_re="$(printf '%s' "$VERSION" | sed 's/\./\\./g')"
-  unzip -p "$LOVE_FILE" src/core/Version.lua \
+  # Captured, not piped into grep -q, for the same SIGPIPE-under-pipefail
+  # reason as the listing checks above.
+  stamped="$(unzip -p "$LOVE_FILE" src/core/Version.lua)"
+  printf '%s' "$stamped" \
     | grep -Eq "engine[[:space:]]*=[[:space:]]*\"$version_re\"" \
     || fail "version stamp failed: game.love does not report engine $VERSION"
   say "stamped engine version: $VERSION"
@@ -291,6 +333,139 @@ build_linux() {
   say "Linux build: $zip_out"
 }
 
+# ------------------------------------------------- Nintendo (LÖVE Potion)
+# 3DS / Switch / Wii U, via LÖVE Potion (https://lovebrew.org).
+#
+# Nothing is compiled here, and nothing can be: LÖVE Potion ships prebuilt
+# console binaries, and turning a game into a .3dsx/.nro/.wuhb is done by the
+# lovebrew bundler, which is a hosted service (it shells out to devkitPro tools
+# server-side).  There is no working local CLI for it.  The old `lovebrew`
+# client still on the releases page posts to www.bundle.lovebrew.org/data:
+# that hostname no longer resolves, and the /data route is gone from the host
+# that does (404 on GET, 405 on POST), so the client cannot be repaired by
+# repointing it.  So this target produces the two things that do not depend on
+# any service being up:
+#
+#   1. an SD-card tree, which needs no bundling at all.  With `packaged = false`
+#      LÖVE Potion runs a plain `game/` folder sitting next to its own binary,
+#      so this is the route that actually boots today, and the one where a
+#      player can drop their .gb right next to main.lua for the auto-import.
+#   2. a bundle zip in the layout the bundler expects, for whenever the service
+#      is reachable, so producing the single-file executables is a drag and
+#      drop rather than a re-derivation of this layout by hand.
+#
+# The game payload is unpacked from game.love rather than re-copied from the
+# source tree, so the console files are byte-identical to every other platform's
+# -- including the version stamp above, which a fresh copy would miss.
+build_console() {
+  local targets="$1"          # toml array body, e.g. '"ctr", "hac"'
+  local label="$2"            # human name for the log line
+  say "building for Nintendo consoles ($label) via LÖVE Potion"
+
+  local out="$DIST/console"
+  local stage="$WORK/console"
+  rm -rf "$stage" "$out"
+  mkdir -p "$stage/game" "$out"
+
+  # 1. game payload, straight out of the archive the desktop builds ship
+  unzip -q "$LOVE_FILE" -d "$stage/game"
+  [ -f "$stage/game/main.lua" ] \
+    || fail "console payload has no main.lua at its root"
+
+  # 2. icons, in each console's required size and container
+  say "generating console icons"
+  python3 "$ROOT/tools/make_console_icons.py" --out "$stage/icons" \
+    || fail "icon generation failed (needs Pillow: python3 -m pip install Pillow)"
+  for required in icon-ctr.png icon-hac.jpg icon-cafe.png; do
+    [ -f "$stage/icons/$required" ] || fail "icon generation did not write $required"
+  done
+
+  # 3. bundler config.  Two files on purpose, and they are not redundant: the
+  # published example and docs use lovebrew.toml with a per-target `icons`
+  # table, while the current bundler source reads bundle.toml with a single
+  # `icon`.  The two schemas are mutually exclusive, the service picks one
+  # filename and ignores the other, and writing both costs nothing while
+  # removing a coin flip over which deployment is live.
+  local semver="$VERSION"
+  printf '%s' "$semver" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || semver="0.1.0"
+
+  cat > "$stage/lovebrew.toml" <<TOML
+[metadata]
+title = "$APP_NAME"
+author = "bryanthaboi"
+description = "Pokemon Red/Blue recompilation"
+version = "$semver"
+icons = { ctr = "icons/icon-ctr.png", hac = "icons/icon-hac.jpg", cafe = "icons/icon-cafe.png" }
+
+[build]
+targets = [$targets]
+source = "game"
+packaged = $CONSOLE_PACKAGED
+TOML
+
+  cat > "$stage/bundle.toml" <<TOML
+[metadata]
+title = "$APP_NAME"
+author = "bryanthaboi"
+description = "Pokemon Red/Blue recompilation"
+version = "$semver"
+icon = "icons/icon-ctr.png"
+
+[build]
+targets = [$targets]
+source = "game"
+TOML
+
+  # 4. bundle zip, for the hosted bundler
+  local bundle="$out/$APP_NAME-$VERSION-console-bundle.zip"
+  (cd "$stage" && zip -q -9 -r "$bundle" lovebrew.toml bundle.toml game icons \
+    -x '*.DS_Store')
+
+  # 5. SD-card tree.  The LÖVE Potion binary is deliberately not vendored: it
+  # is a 20-35MB per-console download with its own release cadence, and pinning
+  # a stale copy inside our dist is how a player ends up debugging a runtime
+  # mismatch that we caused.
+  local sd="$out/sdcard"
+  mkdir -p "$sd"
+  cp -R "$stage/game" "$sd/game"
+  cp -R "$stage/icons" "$sd/icons"
+  cat > "$sd/README.txt" <<'TXT'
+Pokemon Gen 1 recompilation, Nintendo homebrew (3DS / Switch / Wii U)
+====================================================================
+
+This folder is the game, not the runtime.  It runs on LÖVE Potion, which is a
+separate download:
+
+    https://github.com/lovebrew/lovepotion/releases
+
+1. Copy LÖVE Potion's binary for your console (.3dsx, .nro or .wuhb) onto the
+   SD card, in the usual homebrew location.
+2. Copy this `game` folder in next to that binary.
+3. Copy your own Pokemon Red / Blue / Yellow ROM (.gb or .gbc) into the `game`
+   folder, right beside main.lua.
+4. Launch it from the homebrew menu.
+
+No ROM ships with this, and none can: the game builds everything it needs from
+your own cartridge dump on first launch.  That import runs once, takes a while
+on a 3DS, and writes into the save directory afterwards.
+
+The ROM is found by its SHA-1, so the filename does not matter, and Red, Blue
+and Yellow can all sit there together.
+
+If instead you built a single fused executable with the bundler (packaged =
+true), there is no `game` folder to drop the ROM beside -- the source lives
+inside the binary and is read-only.  Put the ROM in the game's save directory
+instead; the launcher prints the exact path when it cannot find one.
+TXT
+
+  say "console bundle: $bundle"
+  say "console SD tree: $sd"
+  warn "not built into .3dsx/.nro/.wuhb here: drag the bundle zip above into"
+  warn "https://bundle.lovebrew.org, which returns the executables. (Ignore"
+  warn "api.lovebrew.org -- that is the unreleased rewrite's endpoint, it 502s,"
+  warn "and it is not what the live bundler uses.) The SD tree needs no bundler."
+}
+
 # --------------------------------------------------------------- Android
 build_android() {
   say "building Android (delegating to scripts/build_android.sh)"
@@ -320,11 +495,32 @@ case "$TARGET" in
   linux) build_linux ;;
   android) build_android ;;
   ios) build_ios ;;
+  # ctr / hac / cafe are the bundler's own names for the three consoles.
+  console)
+    # "ctr cafe" -> '"ctr", "cafe"' for the toml array, and "3DS, Wii U" for
+    # the log line.
+    console_toml=""
+    console_label=""
+    for c in $CONSOLE_LIST; do
+      case "$c" in
+        ctr)  name="3DS" ;;
+        hac)  name="Switch" ;;
+        cafe) name="Wii U" ;;
+      esac
+      console_toml="${console_toml:+$console_toml, }\"$c\""
+      console_label="${console_label:+$console_label, }$name"
+    done
+    build_console "$console_toml" "$console_label"
+    ;;
+  # `all` stays the desktop trio: the console output is not a finished
+  # executable, so folding it in would make every desktop build print bundler
+  # instructions nobody asked for.
   all) build_mac; build_win; build_linux ;;
 esac
 
 case "$TARGET" in
   android) say "done. See $DIST/android/" ;;
   ios) say "done. See $DIST/ios/" ;;
+  3ds|switch|wiiu|console) say "done. See $DIST/console/" ;;
   *) say "done. Artifacts in $DIST" ;;
 esac

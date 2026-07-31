@@ -8,6 +8,9 @@
 -- keeps a mod-free boot (and every headless test) loading exactly the
 -- paths it always did.
 
+-- Console has no requires of its own, so pulling it in here cannot cycle.
+local Console = require("src.core.Console")
+
 local Assets = {}
 
 -- resolved path -> love Image
@@ -29,10 +32,38 @@ local function exists(path)
 end
 Assets.exists = exists
 
+-- 3DS: the lovebrew bundler converts every shipped PNG in the bundle to .t3x
+-- (the console's own texture format) and does NOT keep the .png, so a .png
+-- path written in the source resolves to a file that is not in the build --
+-- which is a hard error at load, not a missing-texture placeholder.  Swap in
+-- the sibling .t3x when one exists.
+--
+-- Existence-driven rather than blanket, because only the shipped art is
+-- converted: everything under assets/generated/ is written as PNG at runtime
+-- by the ROM import, long after the bundler has run, and must stay PNG.
+--
+-- Memoized, because resolve() is on the per-draw path and this would
+-- otherwise cost a filesystem stat per image request per frame.
+local t3xFor = {}
+local function consoleTexture(path)
+  local hit = t3xFor[path]
+  if hit ~= nil then return hit end
+  local swapped = path
+  if path:sub(-4) == ".png" then
+    local candidate = path:sub(1, -5) .. ".t3x"
+    if exists(candidate) then swapped = candidate end
+  end
+  t3xFor[path] = swapped
+  return swapped
+end
+
 -- an override dir shadows the generated cache; a transform's derived
 -- output is the fallback under it, so hand-authored art beats generated
 function Assets.resolve(path)
   local loader = Assets.loader
+  if type(path) == "string" and Console.is3DS() then
+    path = consoleTexture(path)
+  end
   if not loader or type(path) ~= "string" then return path end
   if path:sub(1, #GENERATED) ~= GENERATED then return path end
   local rel = path:sub(#GENERATED + 1)
