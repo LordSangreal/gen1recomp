@@ -1,5 +1,6 @@
--- The six Gen 2-only content registries, end to end: held_items,
--- phone_contacts, decorations, apricorns, landmarks and radio_channels.
+-- The seven Gen 2-only content registries, end to end: held_items,
+-- phone_contacts, decorations, apricorns, landmarks, radio_channels and
+-- pokedex.
 --
 -- Three claims, and the third is the one that makes the other two worth
 -- anything:
@@ -35,7 +36,7 @@ local Nests = require("src.core.gen2.Nests")
 local MapRadio = require("src.ui.gen2.MapRadio")
 
 local NAMES = { "held_items", "phone_contacts", "decorations", "apricorns",
-                "landmarks", "radio_channels" }
+                "landmarks", "radio_channels", "pokedex" }
 
 local PATHS = {
   held_items = "gen2HeldItems",
@@ -44,6 +45,7 @@ local PATHS = {
   apricorns = "gen2Apricorns",
   landmarks = "gen2Landmarks.landmarks",
   radio_channels = "gen2RadioChannels",
+  pokedex = "gen2Pokedex.entries",
 }
 
 -- ------- 1. the mirror of Schemas.GEN2
@@ -132,6 +134,15 @@ local function goldData()
   -- src/core/Game2.lua:load builds this before mods:load; the harness
   -- stands in for that boot step
   data.gen2HeldItems = ItemEffects.heldItemsFrom(data.items)
+  -- the #DEX cache, in the shape data/generated/pokedex.lua has:
+  -- `entries` keyed by species, which is where the route merges
+  data.gen2Pokedex = {
+    entries = {
+      FIX_MON = { id = "FIX_MON", dex = 1, kind = "FIXTURE",
+                  text = "A test mon.", text2 = "Nothing more.",
+                  height = 10, weight = 100 },
+    },
+  }
   return data
 end
 
@@ -214,6 +225,8 @@ do
     "and a mod-free merge writes nothing back onto data.items")
   T.eq(run.data.gen2Landmarks.landmarks.LANDMARK_FIX_TOWN.x, 4,
     "the landmark records are the cache's own")
+  T.eq(run.data.gen2Pokedex.entries.FIX_MON.kind, "FIXTURE",
+    "and the #DEX entries are too")
 
   run.release()
 end
@@ -239,6 +252,8 @@ do
       mod.content.radio_channels:register("PIRATE_RADIO",
         { channel = 9, name = "PIRATE RADIO" })
       mod.content.held_items:patch("FIX_LEFTOVERS", { heldParameter = 7 })
+      mod.content.pokedex:patch("FIX_MON",
+        { kind = "SAMPLE", text = "A patched mon." })
     ]]),
     data = data,
     generation = 2,
@@ -263,6 +278,15 @@ do
     "phone_contacts: the merged row reaches the contact table")
   T.eq(Phone.CONTACTS[15].class, "YOUNGSTER",
     "and the untouched fields survive the patch")
+
+  -- pokedex: PokedexMenu reads self.dex.entries[species] straight off
+  -- data.gen2Pokedex, so the merged row IS what the #DEX page prints
+  T.eq(run.data.gen2Pokedex.entries.FIX_MON.kind, "SAMPLE",
+    "pokedex: the merged row is what the #DEX page reads")
+  T.eq(run.data.gen2Pokedex.entries.FIX_MON.text2, "Nothing more.",
+    "and a field the patch left alone keeps the cart's own text")
+  T.eq(run.data.gen2Pokedex.entries.FIX_MON.dex, 1,
+    "as do the measurements the patch never mentions")
   -- the cache overlay runs from src/world/gen2/World.lua AFTER this, and must
   -- not undo it
   Phone.useExtracted({ phone = { [15] = { map = "ROUTE_30",
