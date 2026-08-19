@@ -32,8 +32,30 @@ find_love() {
   return 1
 }
 
-LOVE_BIN="$(find_love)" \
-  || fail "LÖVE not found,  run scripts/setup.sh (or install from https://love2d.org)"
+find_love12() {
+  local app version
+  for app in "${LOVE_APP:-}" "$ROOT/.bazinga/love12/love.app" "/Applications/love12.app" "$HOME/Applications/love12.app" \
+    "/Applications/love.app" "$HOME/Applications/love.app"; do
+    [ -n "$app" ] || continue
+    if [ -x "$app/Contents/MacOS/love" ]; then
+      version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" 2>/dev/null || true)"
+      if printf '%s' "$version" | grep -Eq '^12(\.|$)' \
+        && otool -L "$app/Contents/Frameworks/love.framework/love" 2>/dev/null | grep -q '/Metal.framework/'; then
+        echo "$app/Contents/MacOS/love"
+        return
+      fi
+    fi
+  done
+  return 1
+}
+
+if [ "$(uname -s)" = "Darwin" ]; then
+  LOVE_BIN="$(find_love12)" \
+    || fail "LÖVE 12 with Metal not found,  run scripts/setup.sh or scripts/build_love_macos.sh --fetch"
+else
+  LOVE_BIN="$(find_love)" \
+    || fail "LÖVE not found,  run scripts/setup.sh (or install from https://love2d.org)"
+fi
 
 # SDL2 on Wayland crashes during desktop drag-and-drop in certain compositors;
 # default to X11/XWayland when available to ensure rock-solid drag-drop stability.

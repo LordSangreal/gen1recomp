@@ -27,9 +27,15 @@ ask() { # ask "question" -> yes by default
 printf '\n  \033[1mPokémon Red - LÖVE2D port\033[0m\n\n'
 
 have_love() {
-  command -v love >/dev/null 2>&1 && return 0
-  [ -x "/Applications/love.app/Contents/MacOS/love" ] && return 0
-  [ -x "$HOME/Applications/love.app/Contents/MacOS/love" ] && return 0
+  local app version
+  for app in ".bazinga/love12/love.app" "/Applications/love12.app" "$HOME/Applications/love12.app" \
+    "/Applications/love.app" "$HOME/Applications/love.app"; do
+    [ -x "$app/Contents/MacOS/love" ] || continue
+    version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" 2>/dev/null || true)"
+    printf '%s' "$version" | grep -Eq '^12(\.|$)' || continue
+    otool -L "$app/Contents/Frameworks/love.framework/love" 2>/dev/null \
+      | grep -q '/Metal.framework/' && return 0
+  done
   return 1
 }
 
@@ -57,22 +63,11 @@ if ! command -v python3 >/dev/null 2>&1; then
   fi
 fi
 
-# ----------------------------------------------------------------- Homebrew
-if ! have_love && ! command -v brew >/dev/null 2>&1 \
-    && [ ! -x /opt/homebrew/bin/brew ] && [ ! -x /usr/local/bin/brew ]; then
-  warn "LÖVE (the game engine) is not installed; the easiest installer is Homebrew"
-  if ask "Install Homebrew now? (asks for your macOS password)"; then
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
-      || { err "Homebrew install failed"; pause_exit 1; }
-  else
-    warn "OK, download LÖVE 11.x yourself from https://love2d.org,"
-    warn "drop love.app into /Applications, then run this again."
-    pause_exit 1
-  fi
+if ! have_love && ! command -v xcodebuild >/dev/null 2>&1; then
+  warn "LÖVE 12 is not installed and Xcode is required to build it for macOS."
+  warn "Install Xcode from the App Store, launch it once, then run this again."
+  pause_exit 1
 fi
-# make brew visible in THIS shell (fresh installs aren't on PATH yet)
-[ -x /opt/homebrew/bin/brew ] && eval "$(/opt/homebrew/bin/brew shellenv)"
-[ -x /usr/local/bin/brew ]    && eval "$(/usr/local/bin/brew shellenv)"
 
 # ------------------------------------------------------------------- build
 echo

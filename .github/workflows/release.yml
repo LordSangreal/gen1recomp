@@ -344,9 +344,16 @@ jobs:
           echo "Identities available to codesign:"
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
+      - name: Build LÖVE 12 macOS runtime
+        run: |
+          set -euo pipefail
+          scripts/build_love_macos.sh --fetch
+
       - name: Build macOS + Windows + Linux
         env:
           GEN1TLS_DLL: ${{ github.workspace }}/dist/native/win-x64/gen1tls.dll
+          LOVE_APP: ${{ github.workspace }}/.bazinga/love12/love.app
+          MAC_STAGE_DIR: ${{ runner.temp }}/gen1recomp-mac-stage
         run: |
           set -euo pipefail
           # Sign in-build (identity auto-detected from the temp keychain);
@@ -428,8 +435,8 @@ jobs:
           set -a; . "$ci_dir/notary.env"; set +a
           echo "::add-mask::$APPLE_APP_PASSWORD"
 
-          app=".bazinga/work/gen1recomp.app"
-          zip="dist/mac/gen1recomp-macos.zip"
+          app="$RUNNER_TEMP/gen1recomp-mac-stage/gen1recomp++.app"
+          zip="dist/mac/gen1recomp++-macos.zip"
           [ -d "$app" ] || { echo "::error::signed app not found at $app"; exit 1; }
           if [ -z "${APPLE_ID:-}" ] || [ -z "${APPLE_APP_PASSWORD:-}" ] || [ -z "${APPLE_TEAM_ID:-}" ]; then
             echo "::error::notary.env is missing APPLE_ID / APPLE_APP_PASSWORD / APPLE_TEAM_ID."
@@ -474,7 +481,7 @@ jobs:
           outdir="dist/release"
           rm -rf "$outdir"
           mkdir -p "$outdir"
-          cp "dist/mac/gen1recomp-macos.zip" "$outdir/gen1recomp-${v}-macos.zip"
+          cp "dist/mac/gen1recomp++-macos.zip" "$outdir/gen1recomp++-${v}-macos.zip"
           cp "dist/win/gen1recomp-win64.zip" "$outdir/gen1recomp-${v}-windows.zip"
           cp "dist/linux/gen1recomp-linux.zip" "$outdir/gen1recomp-${v}-linux.zip"
 

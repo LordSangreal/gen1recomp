@@ -15,7 +15,7 @@ love = love or require("tests.love_stub")
 -- scripts/build.sh mac layout: the game is an archive inside the .app, the
 -- player's portable folder is the one holding the .app.
 local PORTABLE = "/Users/p/Games"
-local APP = PORTABLE .. "/gen1recomp.app"
+local APP = PORTABLE .. "/gen1recomp++.app"
 local SOURCE = APP .. "/Contents/Resources/game.love"
 local BASE = APP .. "/Contents/MacOS"
 

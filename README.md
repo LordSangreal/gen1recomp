@@ -194,8 +194,9 @@ By default the game keeps your save, options, and the private ROM-derived
 data cache in your OS's normal per-user app data folder. To keep everything
 next to the game instead (handy for a USB stick or portable drive you carry
 between computers), drop an empty file named `portable.txt` next to the app
-(next to `gen1recomp.app`/`.exe`, or next to `main.lua`/`conf.lua` when
-running from source), then launch the game. Portable mode is desktop-only
+(next to `gen1recomp++.app` on macOS or `gen1recomp.exe` on Windows, or next
+to `main.lua`/`conf.lua` when running from source), then launch the game.
+Portable mode is desktop-only
 (Windows, Linux, macOS); it has no effect on Android or iOS, where the app
 runs from a read-only package.
 

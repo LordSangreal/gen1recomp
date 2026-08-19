@@ -8,7 +8,7 @@
 #                          [--notary-profile NAME] [--no-notarize]
 #                          [--release]   # ios only: release config instead of debug
 #
-# Output: dist/mac/gen1recomp-macos.zip
+# Output: dist/mac/gen1recomp++-macos.zip
 #         dist/win/gen1recomp-win64.zip
 #         dist/linux/gen1recomp-linux.zip (fused x86_64 AppImage)
 #         dist/android/debug/*.apk (full gradle output stays under
@@ -27,20 +27,40 @@ ENTITLEMENTS="$ROOT/scripts/macos-entitlements.plist"
 
 APP_NAME="gen1recomp"
 BUNDLE_ID="com.theboisclub.pokemonred"
+MAC_APP_NAME="gen1recomp++"
+MAC_BUNDLE_ID="com.theboisclub.gen1recompplusplus"
 LOVE_VERSION="11.5"
-LOVE_MAC_VERSION="12.0"
+LOVE_MAC_VERSION="$(tr -d '[:space:]' < "$ROOT/mobile/macos/LOVE_VERSION" 2>/dev/null || echo 12.0)"
+LOVE_MAC_APP="$HERE/love12/love.app"
 VERSION="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)"
 VERSION_EXPLICIT=false
 IDENTITY=""
 TARGET="all"
 NOTARY_PROFILE="notary-profile"
 NOTARIZE=true
+FETCH_MAC_RUNTIME=false
 IOS_RELEASE=false
 IOS_IPA=false
 
 say()  { printf '\033[1;32m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mwarn:\033[0m %s\n' "$*" >&2; }
 fail() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+strip_bundle_metadata() {
+  local bundle="$1"
+  xattr -rc "$bundle"
+  xattr -rd com.apple.FinderInfo "$bundle" 2>/dev/null || true
+  xattr -rd 'com.apple.fileprovider.fpfs#P' "$bundle" 2>/dev/null || true
+}
+
+valid_love12_app() {
+  local app="$1" version
+  [ -x "$app/Contents/MacOS/love" ] || return 1
+  version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" 2>/dev/null || true)"
+  printf '%s' "$version" | grep -Eq '^12(\.|$)' || return 1
+  otool -L "$app/Contents/Frameworks/love.framework/love" 2>/dev/null \
+    | grep -q '/Metal.framework/'
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -49,6 +69,7 @@ while [ $# -gt 0 ]; do
     --identity) IDENTITY="$2"; shift ;;
     --notary-profile) NOTARY_PROFILE="$2"; shift ;;
     --no-notarize) NOTARIZE=false ;;
+    --fetch) FETCH_MAC_RUNTIME=true ;;
     --release) IOS_RELEASE=true ;;
     --ipa) IOS_IPA=true ;;
     *) fail "unknown argument: $1" ;;
@@ -151,8 +172,21 @@ make_ico() { # $1 = output .ico path
 # --------------------------------------------------------------- macOS
 build_mac() {
   say "building macOS app"
-  local love_app="${LOVE_APP:-/Applications/love12.app}"
-  [ -d "$love_app" ] || fail "LÖVE.app not found at $love_app (install it or set LOVE_APP=/path/to/love.app)"
+  local love_app="${LOVE_APP:-}"
+  if [ -z "$love_app" ]; then
+    for candidate in "$LOVE_MAC_APP" "/Applications/love12.app" "$HOME/Applications/love12.app" \
+      "/Applications/love.app" "$HOME/Applications/love.app"; do
+      if [ -d "$candidate" ] && valid_love12_app "$candidate"; then
+        love_app="$candidate"
+        break
+      fi
+    done
+  fi
+  if [ ! -d "$love_app" ] && [ -z "${LOVE_APP:-}" ] && $FETCH_MAC_RUNTIME; then
+    "$ROOT/scripts/build_love_macos.sh" --fetch
+    love_app="$LOVE_MAC_APP"
+  fi
+  [ -d "$love_app" ] || fail "LÖVE 12 Metal app not found; run scripts/build_love_macos.sh --fetch or set LOVE_APP=/path/to/love.app"
   local love_version
   love_version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$love_app/Contents/Info.plist" 2>/dev/null || true)
   printf '%s' "$love_version" | grep -Eq '^12(\.|$)' \
@@ -163,22 +197,30 @@ build_mac() {
     | grep -q '/Metal.framework/' \
     || fail "macOS build requires a LÖVE runtime linked to Metal at $love_app"
 
-  local stage_dir
-  stage_dir="$(mktemp -d /tmp/gen1recomp-mac.XXXXXX)"
-  local out_app="$stage_dir/$APP_NAME.app"
+  local stage_dir="${MAC_STAGE_DIR:-${RUNNER_TEMP:-/tmp}/gen1recomp-mac-stage}"
+  local out_app="$stage_dir/$MAC_APP_NAME.app"
+  mkdir -p "$stage_dir"
+  rm -rf "$out_app"
   ditto --norsrc "$love_app" "$out_app"
+
+  local love_executable="$out_app/Contents/MacOS/love"
+  local app_executable="$out_app/Contents/MacOS/$MAC_APP_NAME"
+  [ -f "$love_executable" ] || fail "LÖVE app is missing Contents/MacOS/love"
+  mv "$love_executable" "$app_executable"
 
   # drop any bundled placeholder .love and fuse ours in
   find "$out_app/Contents/Resources" -maxdepth 1 -name '*.love' -delete
   cp "$LOVE_FILE" "$out_app/Contents/Resources/game.love"
 
   local plist="$out_app/Contents/Info.plist"
-  /usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$plist" 2>/dev/null \
-    || /usr/libexec/PlistBuddy -c "Add :CFBundleName string $APP_NAME" "$plist"
-  /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$plist" 2>/dev/null \
-    || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $APP_NAME" "$plist"
-  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$plist" 2>/dev/null \
-    || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $BUNDLE_ID" "$plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleName $MAC_APP_NAME" "$plist" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :CFBundleName string $MAC_APP_NAME" "$plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $MAC_APP_NAME" "$plist" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $MAC_APP_NAME" "$plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $MAC_APP_NAME" "$plist" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string $MAC_APP_NAME" "$plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $MAC_BUNDLE_ID" "$plist" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $MAC_BUNDLE_ID" "$plist"
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$plist" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $VERSION" "$plist"
   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$plist" 2>/dev/null \
@@ -200,7 +242,10 @@ build_mac() {
   /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile OS X AppIcon" "$plist" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string 'OS X AppIcon'" "$plist"
 
-  xattr -rc "$out_app"
+  strip_bundle_metadata "$out_app"
+
+  rm -rf "$WORK/$MAC_APP_NAME.app"
+  ln -s "$out_app" "$WORK/$MAC_APP_NAME.app"
 
   local id="$IDENTITY"
   if [ -z "$id" ]; then
@@ -223,9 +268,9 @@ build_mac() {
       warn "keychain profile '$NOTARY_PROFILE' not found/working,  skipping notarization."
       warn "set it up with: xcrun notarytool store-credentials \"$NOTARY_PROFILE\" --apple-id ... --team-id ... --password ..."
     else
-      local notarize_zip="$stage_dir/$APP_NAME-notarize.zip"
+      local notarize_zip="$stage_dir/$MAC_APP_NAME-notarize.zip"
       rm -f "$notarize_zip"
-      (cd "$stage_dir" && ditto -c -k --keepParent "$APP_NAME.app" "$notarize_zip")
+      (cd "$stage_dir" && ditto -c -k --keepParent "$MAC_APP_NAME.app" "$notarize_zip")
       say "submitting to Apple notary service (this can take a few minutes)"
       xcrun notarytool submit "$notarize_zip" --keychain-profile "$NOTARY_PROFILE" --wait
       say "stapling notarization ticket"
@@ -234,12 +279,11 @@ build_mac() {
     fi
   fi
 
-  xattr -rc "$out_app"
+  strip_bundle_metadata "$out_app"
 
-  local zip_out="$DIST/mac/$APP_NAME-macos.zip"
+  local zip_out="$DIST/mac/$MAC_APP_NAME-macos.zip"
   rm -f "$zip_out"
-  (cd "$stage_dir" && ditto -c -k --norsrc --keepParent "$APP_NAME.app" "$zip_out")
-  rm -rf "$stage_dir"
+  (cd "$stage_dir" && ditto -c -k --norsrc --keepParent "$MAC_APP_NAME.app" "$zip_out")
   say "macOS build: $zip_out"
 }
 

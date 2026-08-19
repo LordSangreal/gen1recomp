@@ -70,11 +70,32 @@ find_love() {
   return 1
 }
 
-if LOVE_BIN="$(find_love)"; then
+valid_love12_app() {
+  local app="$1" version
+  [ -x "$app/Contents/MacOS/love" ] || return 1
+  version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" 2>/dev/null || true)"
+  printf '%s' "$version" | grep -Eq '^12(\.|$)' || return 1
+  otool -L "$app/Contents/Frameworks/love.framework/love" 2>/dev/null \
+    | grep -q '/Metal.framework/'
+}
+
+if [ "$(uname -s)" = "Darwin" ]; then
+  if valid_love12_app "$ROOT/.bazinga/love12/love.app"; then
+    say "LÖVE 12 found: $ROOT/.bazinga/love12/love.app"
+  elif valid_love12_app "/Applications/love12.app"; then
+    say "LÖVE 12 found: /Applications/love12.app"
+  elif valid_love12_app "$HOME/Applications/love12.app"; then
+    say "LÖVE 12 found: $HOME/Applications/love12.app"
+  elif valid_love12_app "/Applications/love.app"; then
+    say "LÖVE 12 found: /Applications/love.app"
+  elif valid_love12_app "$HOME/Applications/love.app"; then
+    say "LÖVE 12 found: $HOME/Applications/love.app"
+  else
+    say "building LÖVE 12 for macOS"
+    "$ROOT/scripts/build_love_macos.sh" --fetch
+  fi
+elif LOVE_BIN="$(find_love)"; then
   say "LÖVE found: $LOVE_BIN"
-elif [ "$(uname -s)" = "Darwin" ] && command -v brew >/dev/null 2>&1; then
-  say "installing LÖVE via Homebrew"
-  brew install --cask love
 else
   fail "LÖVE 11.x is not installed; install it from https://love2d.org"
 fi

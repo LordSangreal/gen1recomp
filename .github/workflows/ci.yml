@@ -26,6 +26,64 @@ permissions:
   contents: read
 
 jobs:
+  macos-changes:
+    name: detect macOS changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.paths.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -Eq '^(conf\.lua$|scripts/(build\.sh|build_love_macos\.sh|run\.sh|setup\.sh)$|Play-Mac\.command$|mobile/macos/|src/core/SaveData\.lua$|\.github/workflows/(ci|release)\.yml$)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  macos-build:
+    name: macOS LÖVE 12 build
+    needs: macos-changes
+    if: needs.macos-changes.outputs.changed == 'true'
+    runs-on: ${{ fromJSON(github.repository == 'bryanthaboi/gen1recomp' && '["self-hosted", "macOS"]' || '"macos-latest"') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build LÖVE 12 macOS runtime
+        run: scripts/build_love_macos.sh --fetch
+      - name: Build and verify macOS app
+        env:
+          LOVE_APP: ${{ github.workspace }}/.bazinga/love12/love.app
+          MAC_STAGE_DIR: ${{ runner.temp }}/gen1recomp-mac-stage
+        run: |
+          set -euo pipefail
+          scripts/build.sh mac --no-notarize --identity - --version 0.0.0
+          unzip -tqq 'dist/mac/gen1recomp++-macos.zip'
+          app="$MAC_STAGE_DIR/gen1recomp++.app"
+          [ -d "$app" ]
+          [ -x "$app/Contents/MacOS/gen1recomp++" ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")" = 'gen1recomp++' ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app/Contents/Info.plist")" = 'gen1recomp++' ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = 'com.theboisclub.gen1recompplusplus' ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = 0.0.0 ]
+          codesign --verify --deep --strict "$app"
+          otool -L "$app/Contents/Frameworks/love.framework/love" | grep -q '/Metal.framework/'
+      - name: Upload macOS build
+        uses: actions/upload-artifact@v7
+        with:
+          name: gen1recomp++-macos
+          path: dist/mac/gen1recomp++-macos.zip
+          if-no-files-found: error
+          retention-days: 7
+
   ios-changes:
     name: detect iOS changes
     runs-on: ubuntu-latest
