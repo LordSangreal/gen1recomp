@@ -28,6 +28,7 @@ ENTITLEMENTS="$ROOT/scripts/macos-entitlements.plist"
 APP_NAME="gen1recomp"
 BUNDLE_ID="com.theboisclub.pokemonred"
 LOVE_VERSION="11.5"
+LOVE_MAC_VERSION="12.0"
 VERSION="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dev)"
 VERSION_EXPLICIT=false
 IDENTITY=""
@@ -150,12 +151,22 @@ make_ico() { # $1 = output .ico path
 # --------------------------------------------------------------- macOS
 build_mac() {
   say "building macOS app"
-  local love_app="${LOVE_APP:-/Applications/love.app}"
+  local love_app="${LOVE_APP:-/Applications/love12.app}"
   [ -d "$love_app" ] || fail "LÖVE.app not found at $love_app (install it or set LOVE_APP=/path/to/love.app)"
+  local love_version
+  love_version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$love_app/Contents/Info.plist" 2>/dev/null || true)
+  printf '%s' "$love_version" | grep -Eq '^12(\.|$)' \
+    || fail "macOS build requires LÖVE $LOVE_MAC_VERSION at $love_app (set LOVE_APP to a LÖVE 12 app)"
+  [ -f "$love_app/Contents/Frameworks/love.framework/love" ] \
+    || fail "macOS build requires love.framework at $love_app"
+  otool -L "$love_app/Contents/Frameworks/love.framework/love" \
+    | grep -q '/Metal.framework/' \
+    || fail "macOS build requires a LÖVE runtime linked to Metal at $love_app"
 
-  local out_app="$WORK/$APP_NAME.app"
-  rm -rf "$out_app"
-  cp -R "$love_app" "$out_app"
+  local stage_dir
+  stage_dir="$(mktemp -d /tmp/gen1recomp-mac.XXXXXX)"
+  local out_app="$stage_dir/$APP_NAME.app"
+  ditto --norsrc "$love_app" "$out_app"
 
   # drop any bundled placeholder .love and fuse ours in
   find "$out_app/Contents/Resources" -maxdepth 1 -name '*.love' -delete
@@ -212,9 +223,9 @@ build_mac() {
       warn "keychain profile '$NOTARY_PROFILE' not found/working,  skipping notarization."
       warn "set it up with: xcrun notarytool store-credentials \"$NOTARY_PROFILE\" --apple-id ... --team-id ... --password ..."
     else
-      local notarize_zip="$WORK/$APP_NAME-notarize.zip"
+      local notarize_zip="$stage_dir/$APP_NAME-notarize.zip"
       rm -f "$notarize_zip"
-      (cd "$WORK" && ditto -c -k --keepParent "$APP_NAME.app" "$notarize_zip")
+      (cd "$stage_dir" && ditto -c -k --keepParent "$APP_NAME.app" "$notarize_zip")
       say "submitting to Apple notary service (this can take a few minutes)"
       xcrun notarytool submit "$notarize_zip" --keychain-profile "$NOTARY_PROFILE" --wait
       say "stapling notarization ticket"
@@ -227,7 +238,8 @@ build_mac() {
 
   local zip_out="$DIST/mac/$APP_NAME-macos.zip"
   rm -f "$zip_out"
-  (cd "$WORK" && ditto -c -k --norsrc --keepParent "$APP_NAME.app" "$zip_out")
+  (cd "$stage_dir" && ditto -c -k --norsrc --keepParent "$APP_NAME.app" "$zip_out")
+  rm -rf "$stage_dir"
   say "macOS build: $zip_out"
 }
 
