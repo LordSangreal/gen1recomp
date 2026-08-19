@@ -189,6 +189,8 @@ build_mac() {
   /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile OS X AppIcon" "$plist" 2>/dev/null \
     || /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string 'OS X AppIcon'" "$plist"
 
+  xattr -rc "$out_app"
+
   local id="$IDENTITY"
   if [ -z "$id" ]; then
     id="$(security find-identity -v -p codesigning 2>/dev/null | grep 'Developer ID Application' | head -1 | sed -E 's/^[^"]*"(.*)"$/\1/' || true)"
@@ -221,9 +223,11 @@ build_mac() {
     fi
   fi
 
+  xattr -rc "$out_app"
+
   local zip_out="$DIST/mac/$APP_NAME-macos.zip"
   rm -f "$zip_out"
-  (cd "$WORK" && ditto -c -k --sequesterRsrc --keepParent "$APP_NAME.app" "$zip_out")
+  (cd "$WORK" && ditto -c -k --norsrc --keepParent "$APP_NAME.app" "$zip_out")
   say "macOS build: $zip_out"
 }
 
