@@ -70,6 +70,7 @@ fetch_repo() {
 
 fetch_sources() {
   local tmp
+  mkdir -p "$CACHE"
   tmp="$(mktemp -d "$CACHE/fetch.XXXXXX")"
   say "fetching LÖVE source $LOVE_SOURCE_REF"
   fetch_repo "$LOVE_SOURCE_REPO" "$LOVE_SOURCE_REF" "$tmp/love"
