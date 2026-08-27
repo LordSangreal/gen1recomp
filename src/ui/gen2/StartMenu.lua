@@ -48,39 +48,39 @@ StartMenu.isOpaque = false
 local ITEMS = {
   {
     id = "pokedex", label = Strings("POKéDEX"), need = "pokedex",
-    desc = { "POKéMON", "database" },
+    desc = { Strings("POKéMON"), Strings("database") },
   },
   {
     id = "pokemon", label = Strings("POKéMON"), need = "party",
-    desc = { "Party <PK><MN>", "status" },
+    desc = { Strings("Party <PK><MN>"), Strings("status") },
   },
   {
     id = "pack", label = Strings("PACK"), need = "pack",
-    desc = { "Contains", "items" },
+    desc = { Strings("Contains"), Strings("items") },
   },
   {
     id = "pokegear", label = Strings("<PO><KE>GEAR"), need = "pokegear",
-    desc = { "Trainer's", "key device" },
+    desc = { Strings("Trainer's"), Strings("key device") },
   },
   {
     -- The player's own name is the label (.StatusString is "<PLAYER>").
     id = "status", label = nil,
-    desc = { "Your own", "status" },
+    desc = { Strings("Your own"), Strings("player status") },
   },
   {
     id = "save", label = Strings("SAVE"),
-    desc = { "Save your", "progress" },
+    desc = { Strings("Save your"), Strings("progress") },
   },
   {
     id = "option", label = Strings("OPTION"),
-    desc = { "Change", "settings" },
+    desc = { Strings("Change"), Strings("settings") },
   },
   {
     -- The mod manager's discoverable home, exactly as the Gen 1 start menu
     -- carries it: the row only appears once at least one mod has been
     -- discovered, so a vanilla install's menu is the cart's.
     id = "mods", label = Strings("MODS"), need = "mods",
-    desc = { "Installed", "add-ons" },
+    desc = { Strings("Installed"), Strings("add-ons") },
   },
   {
     -- The cart's EXIT just closed the menu (CloseStartMenu).  A window with a
@@ -88,7 +88,7 @@ local ITEMS = {
     -- (src/ui/StartMenu.lua) -- this row is QUIT and power-cycles back to the
     -- title after a confirmation that defaults to NO.
     id = "quit", label = Strings("QUIT"),
-    desc = { "Return to", "the title" },
+    desc = { Strings("Return to"), Strings("the title") },
   },
 }
 
