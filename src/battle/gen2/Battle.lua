@@ -2975,10 +2975,10 @@ Battle.STATUSES = {
       if mon.statusTurns <= 0 then
         mon.status = nil
         mon.statusTurns = nil
-        battle:emit({ kind = "message", text = name .. " woke up!" })
+        battle:emit({ kind = "message", text = Strings("%s\nwoke up!", name) })
         return true
       end
-      battle:emit({ kind = "message", text = name .. " is fast asleep!" })
+      battle:emit({ kind = "message", text = Strings("%s\nis fast asleep!", name) })
       return false
     end,
   },
@@ -3016,7 +3016,7 @@ Battle.STATUSES = {
       if rand(battle.random, Battle.PARALYSIS_SKIP_CHANCE) ~= 0 then
         return true
       end
-      battle:emit({ kind = "message", text = name .. "'s fully paralyzed!" })
+      battle:emit({ kind = "message", text = Strings("%s's\nfully paralyzed!", name) })
       return false
     end,
   },
@@ -3038,10 +3038,10 @@ Battle.STATUSES = {
     beforeMove = function(battle, mon, name)
       if rand(battle.random, Battle.THAW_CHANCE) == 0 then
         mon.status = nil
-        battle:emit({ kind = "message", text = name .. " thawed out!" })
+        battle:emit({ kind = "message", text = Strings("%s\nthawed out!", name) })
         return true
       end
-      battle:emit({ kind = "message", text = name .. " is frozen solid!" })
+      battle:emit({ kind = "message", text = Strings("%s\nis frozen solid!", name) })
       return false
     end,
   },
@@ -3262,8 +3262,7 @@ function Battle:resolveFaints()
 
   if (self.enemy.hp or 0) <= 0 then
     self:emit({ kind = "faint", side = "enemy",
-      text = (self.wild and "Wild " or "") .. self:monName(self.enemy)
-        .. " fainted!" })
+      text = Strings(self.wild and "Wild %s\nfainted!" or "Enemy %s\nfainted!", self:monName(self.enemy)) })
     -- battle.fainted, the payload BattleState:onFaint emits on Gen 1.
     -- `battler` is the mon itself here: Gen 2's engine has no battler wrapper.
     Runtime.emit("battle.fainted", { battle = self, battler = self.enemy,

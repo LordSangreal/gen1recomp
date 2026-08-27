@@ -153,8 +153,8 @@ local TEXT_ASK_FORGET_MOVE = Strings.source(
 local MENU = { "FIGHT", "<PK><MN>", "PACK", "RUN" }
 local MENU_ACTION = { FIGHT = "fight", ["<PK><MN>"] = "party",
   PACK = "item", RUN = "run" }
-local MENU_BOX_X = 6
-local MENU_COL_SPACING = 7
+local MENU_BOX_X = 8
+local MENU_COL_SPACING = 5
 
 -- ContestBattleMenuHeader is the same 2x2 grid moved out to menu_coords 2, 12
 -- with 12 tiles of column spacing, because its third label is "PARKBALL×" and

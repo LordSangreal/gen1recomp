@@ -54,7 +54,7 @@ local BADGES_X, BADGES_Y = 17, 4
 local DEX_X, DEX_Y = 16, 6
 local TIME_X, TIME_Y = 13, 8
 
-local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 0, 7, 6, 5
+local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 0, 7, 5, 5
 
 -- AlreadyASaveFileText (AskOverwriteSaveFile, engine/menus/save.asm:47) and
 -- SavingDontTurnOffThePower's own line -- one \n-joined translatable key
