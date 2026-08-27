@@ -153,8 +153,8 @@ local TEXT_ASK_FORGET_MOVE = Strings.source(
 local MENU = { "FIGHT", "<PK><MN>", "PACK", "RUN" }
 local MENU_ACTION = { FIGHT = "fight", ["<PK><MN>"] = "party",
   PACK = "item", RUN = "run" }
-local MENU_BOX_X = 8
-local MENU_COL_SPACING = 6
+local MENU_BOX_X = 6
+local MENU_COL_SPACING = 7
 
 -- ContestBattleMenuHeader is the same 2x2 grid moved out to menu_coords 2, 12
 -- with 12 tiles of column spacing, because its third label is "PARKBALL×" and
@@ -3861,11 +3861,11 @@ function BattleState:drawStatsBox(mon)
     stats = Mon.stats(def.baseStats, mon.dvs, mon.level, mon.statExp)
   end
   if not stats then return end
-  Chrome.textbox(9, 0, 9, 10)
+  Chrome.textbox(9, 0, 11, 11)
   for i, row in ipairs(STATS_BOX_ROWS) do
     local ty = 1 + (i - 1) * 2
     Chrome.printThrough(Strings(row[1]), 11, ty, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printRightThrough(("%d"):format(stats[row[2]] or 0), 19, ty + 1,
+    Chrome.printRightThrough(("%d"):format(stats[row[2]] or 0), 18, ty + 1,
       Chrome.DEFAULT_BOX_PALETTE)
   end
 end

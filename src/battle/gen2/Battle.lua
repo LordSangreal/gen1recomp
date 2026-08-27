@@ -23,6 +23,7 @@ local Ai = require("src.battle.gen2.Ai")
 local Effects = require("src.battle.gen2.Effects")
 local Mon = require("src.battle.gen2.Mon")
 local Happiness = require("src.core.gen2.Happiness")
+local Strings = require("src.core.Strings")
 local Pokerus = require("src.core.gen2.Pokerus")
 local Roamers = require("src.core.gen2.Roamers")
 local Prize = require("src.battle.gen2.Prize")
@@ -3506,8 +3507,8 @@ function Battle:giveExperiencePass(loser, def, recipients, count, halved,
       if not silent then
         self:emit({ kind = "experience", index = index, amount = amount,
           -- BoostedExpPointsText, keyed on the traded arm alone.
-          text = self:monName(mon) .. " gained "
-            .. (traded and "a boosted " or "") .. amount .. " EXP. Points!" })
+          text = Strings(traded and "%s gained\na boosted\v%d EXP. Points!"
+            or "%s gained\n%d EXP. Points!", self:monName(mon), amount) })
       end
       if result.levels > 0 then
         -- "level up happiness mod", the cart's own comment, sitting right
@@ -3516,7 +3517,7 @@ function Battle:giveExperiencePass(loser, def, recipients, count, halved,
         -- ChangeHappiness is outside the level loop.
         Happiness.change(mon, "GAINLEVEL")
         self:emit({ kind = "level", index = index, level = mon.level,
-          text = self:monName(mon) .. " grew to level " .. mon.level .. "!",
+          text = Strings("%s grew to\nlevel %s!", self:monName(mon), mon.level),
           sfx = "Sfx_DexFanfare5079", waitSfx = true })
         for _, moveId in ipairs(result.learned) do
           local ok, reason, entry = Mon.learnMove(mon, moveId, self.data)
@@ -3526,7 +3527,7 @@ function Battle:giveExperiencePass(loser, def, recipients, count, halved,
             -- data/text/common_3.asm:119
             self:emit({ kind = "message",
               sfx = "Sfx_DexFanfare5079", waitSfx = true,
-              text = self:monName(mon) .. " learned " .. moveName .. "!" })
+              text = Strings("%s learned\n%s!", self:monName(mon), Strings(moveName)) })
           elseif reason == "full" then
             -- LearnMove's full-moveset arm calls ForgetMove, which asks with
             -- AskForgetMoveText (engine/pokemon/learn.asm:29-34, :121-124).

@@ -702,7 +702,7 @@ local function runCmd(self, cmd, op)
         -- :1351, data/items/pocket_names.asm:10-13).
         -- Script_specialsound's WaitSFX (scripting.asm:485): the box holds
         -- its press until the jingle ends.
-        self:showRaw(Strings("{PLAYER} put the\n%s in\nthe %s.",
+        self:showRaw(Strings("{PLAYER} put the\n%s in\vthe %s.",
           name, self:pocketName(item)), nil, nil, true)
       else
         self:showRaw(Strings("The %s\nis full…", self:pocketName(item)))
@@ -719,7 +719,7 @@ local function runCmd(self, cmd, op)
     -- the clobber would corrupt an unrelated {STRBUF} page.
     local name = self:curItemName()
     if name ~= "" then
-      self:showRaw(Strings("{PLAYER} put the\n%s in\nthe %s.",
+      self:showRaw(Strings("{PLAYER} put the\n%s in\vthe %s.",
         name, self:pocketName(self.curItem)))
     end
   elseif op == "pocketisfull" then
