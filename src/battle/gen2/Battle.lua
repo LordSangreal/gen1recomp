@@ -1271,7 +1271,7 @@ function Battle:dealDamage(attacker, defender, damage, opts)
     effectiveness = opts.effectiveness,
   })
   if opts.critical then
-    self:emit({ kind = "message", text = "A critical hit!" })
+    self:emit({ kind = "message", text = Strings("A critical hit!") })
   end
   -- SuperEffectiveText / NotVeryEffectiveText (data/text/battle.asm:603,608).
   -- The cart breaks both across the box's two lines and hyphenates "super-"
@@ -3273,7 +3273,7 @@ function Battle:resolveFaints()
     if not nextIndex then
       if self.trainer then
         self:emit({ kind = "message",
-          text = (self.trainer.name or "TRAINER") .. " was defeated!" })
+          text = Strings("%s was defeated!", (Strings(self.trainer.name) or "TRAINER")) })
         self:printWinLossText("win")
         self:awardPrizeMoney()
       end
