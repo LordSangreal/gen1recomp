@@ -38,12 +38,7 @@ local Nests = require("src.core.gen2.Nests")
 local Sound = require("src.core.Sound")
 local Unown = require("src.core.gen2.Unown")
 local Strings = require("src.core.Strings")
-
--- `db $3b, " OPTION ", $3c` / `db $3b, " SEARCH ", $3c"`: the panel titles
--- drawn by drawOption/drawSearch below, declared here (rather than inline)
--- so Strings.source puts them in the catalog harvest.
-local OPTION_LABEL = Strings.source(" OPTION ")
-local SEARCH_LABEL = Strings.source(" SEARCH ")
+local Font = require("src.render.Font")
 
 local PokedexMenu = {}
 PokedexMenu.__index = PokedexMenu
@@ -79,6 +74,23 @@ local TILE_DIVIDER = 0x61
 local TILE_PAGE_TOP = 0x55
 local TILE_PAGE_P = 0x56
 local TILE_PAGE_DIGIT = { 0x57, 0x58 }
+
+-- The entry screen's two measurements print in the cart's own units, and the
+-- foot and inch marks are tiles out of the dex sheet rather than font glyphs
+-- -- so a translation could reach "lb" through the catalog and nothing else,
+-- which left metres and kilos out of reach altogether.  Each row now resolves
+-- as a whole: the source is the shape the cart draws, `Strings.lookup` handing
+-- the source straight back means nothing asked for anything different, and
+-- that takes the tile path below -- what this screen has always drawn, tile
+-- for tile.  A catalog that answers something else has that printed instead,
+-- right-aligned on the same edge the cart's own field ends on.
+--
+-- The digits stay the `pokedex` registry's, so a metric translation ships
+-- them the way it ships `kind` and keeps the cart's own shape for them:
+-- whole * 100 + fraction for the height, tenths for the weight.  What the
+-- catalog supplies is the punctuation and the unit -- "%d,%dm", "%d,%dkg".
+local HEIGHT_UNITS = Strings.source("%d'%d\"")
+local WEIGHT_UNITS = Strings.source("%d.%dlb")
 
 -- String_SELECT_OPTION falls through into String_START_SEARCH with no
 -- terminator between them, so placing it at (1,17) writes all 18 tiles.
@@ -562,6 +574,14 @@ function PokedexMenu:text(str, tx, ty)
   Chrome.printInverted(str, tx, ty, self.gfx and self.gfx.palette)
 end
 
+-- Print ending on column `edge` instead of starting on a column: the entry
+-- screen's measurements are right-aligned fields, and a translation of them
+-- is not the same width as the cart's.  Font.width rather than #str, because
+-- a translated unit may spend two bytes on one glyph.
+function PokedexMenu:rightText(str, edge, ty)
+  self:text(str, edge + 1 - math.ceil(Font.width(str) / 8), ty)
+end
+
 -- The inverted font's ' ' cell.  Uninverted it is shade 0 throughout, so
 -- inverted it is a solid shade 3 -- black under PREDEFPAL_POKEDEX -- and
 -- every ClearBox and box interior on these screens is made of it.
@@ -624,6 +644,23 @@ local function printNumString(value, digits, leadingZeros, before)
   return text
 end
 
+-- One measurement, without its label: the cart's digits while nothing has
+-- overridden the units, and the catalog's own form once something has.
+-- `split` is where the value's fraction starts (100 for the height's second
+-- pair of digits, 10 for the weight's single one).
+local function measureText(source, value, split, digits, before)
+  if Strings.lookup(source) == source then
+    return printNumString(value, digits, false, before)
+  end
+  return Strings(source, math.floor(value / split), value % split)
+end
+
+-- The same form with the numbers left out, for a mon the player has seen but
+-- not caught: the cart prints "?" in each digit's place and so does this.
+local function unknownText(form)
+  return (form:gsub("%%[-+ #0]*%d*%.?%d*[diufgGeExXoc]", "?"))
+end
+
 -- ---------------------------------------------------------------- main screen
 
 -- Pokedex_DrawMainScreenBG, drawn behind the window and scrolled by SCX.
@@ -639,9 +676,9 @@ function PokedexMenu:drawMainBackground()
   self:border(0, 9, 6, 7)
 
   local seen, caught = self:totals()
-  self:text("SEEN", 1, 11)
+  self:text(Strings("SEEN"), 1, 11)
   self:text(printNumString(seen, 3), 5, 12)
-  self:text("OWN", 1, 14)
+  self:text(Strings("OWN"), 1, 14)
   self:text(printNumString(caught, 3), 5, 15)
 
   for i, id in ipairs(BOTTOM_CAPTION) do self:tile(id, i, 17) end
@@ -882,7 +919,7 @@ function PokedexMenu:drawArea()
   if #nests == 0 then
     -- A species with no grass, water or roamer entry in this region. The cart
     -- simply shows the map with nothing blinking on it.
-    self:text("AREA UNKNOWN", 4, 16)
+    self:text(Strings("AREA UNKNOWN"), 4, 16)
     return
   end
 
@@ -946,7 +983,7 @@ function PokedexMenu:drawEntryBody(row, entry)
   self:tile(0x3b, 0, 17)
   -- _NewPokedexEntry ByteFills the action row away (pokedex.asm:2540-2545).
   if not self.newEntry then
-    self:text(" PAGE AREA CRY PRNT", 1, 17)
+    self:text(Strings(" PAGE AREA CRY PRNT"), 1, 17)
     -- Pokedex_InitArrowCursor parks an arrow on the selected action; without it
     -- the four words are decoration and there is no way to tell what A will do.
     --
@@ -979,27 +1016,50 @@ function PokedexMenu:drawEntryBody(row, entry)
 
   -- .Height / .Weight are placeholder strings until the mon is caught:
   -- "HT  ?'??"" at (9,7) and "WT   ???lb" at (9,9).
-  self:text("HT", 9, 7)
-  self:text("WT", 9, 9)
-  self:tile(TILE_FOOT, 14, 7)
-  self:text("lb", 17, 9)
+  self:text(Strings("HT"), 9, 7)
+  self:text(Strings("WT"), 9, 9)
+  -- The marks belong to the cart's units, so they are drawn only while the
+  -- units are the cart's; see HEIGHT_UNITS.
+  local heightForm = Strings.lookup(HEIGHT_UNITS)
+  local weightForm = Strings.lookup(WEIGHT_UNITS)
+  local cartHeight = heightForm == HEIGHT_UNITS
+  local cartWeight = weightForm == WEIGHT_UNITS
+  if cartHeight then self:tile(TILE_FOOT, 14, 7) end
+  if cartWeight then self:text(Strings("lb"), 17, 9) end
 
   if not row.caught then
-    self:text("  ?", 11, 7)
-    self:text("??", 15, 7)
-    self:tile(TILE_INCH, 17, 7)
-    self:text("  ???", 11, 9)
+    if cartHeight then
+      self:text("  ?", 11, 7)
+      self:text("??", 15, 7)
+      self:tile(TILE_INCH, 17, 7)
+    else
+      self:rightText(unknownText(heightForm), 17, 7)
+    end
+    if cartWeight then
+      self:text("  ???", 11, 9)
+    else
+      self:rightText(unknownText(weightForm), 18, 9)
+    end
     return
   end
 
   -- The height word is four digits with two in front of the point and the
   -- point replaced by the foot mark; the weight word is five with four in
   -- front.  Both are already the digits the cart prints.
-  local height = printNumString(entry.height or 0, 4, false, 2)
-  self:text(height:sub(1, 2), 12, 7)
-  self:text(height:sub(4), 15, 7)
-  self:tile(TILE_INCH, 17, 7)
-  self:text(printNumString(entry.weight or 0, 5, false, 4), 11, 9)
+  local height, weight = entry.height or 0, entry.weight or 0
+  if cartHeight then
+    local shown = printNumString(height, 4, false, 2)
+    self:text(shown:sub(1, 2), 12, 7)
+    self:text(shown:sub(4), 15, 7)
+    self:tile(TILE_INCH, 17, 7)
+  else
+    self:rightText(Strings(HEIGHT_UNITS, math.floor(height / 100), height % 100), 17, 7)
+  end
+  if cartWeight then
+    self:text(printNumString(weight, 5, false, 4), 11, 9)
+  else
+    self:rightText(Strings(WEIGHT_UNITS, math.floor(weight / 10), weight % 10), 18, 9)
+  end
 
   -- Page marker, then the description.  ClearBox(2,11) is 5 rows by 18
   -- columns and <NEXT> steps two rows, so the three lines land on 11/13/15.
@@ -1054,8 +1114,10 @@ function PokedexMenu:drawPlain()
       Chrome.print(("%s  %s"):format(
         Chrome.number(entry.dex or 0, 3, true), self:monName(row.species)), 1, 1)
       Chrome.print(entry.kind or "", 1, 3)
-      Chrome.print("HT " .. printNumString(entry.height or 0, 4, false, 2), 1, 5)
-      Chrome.print("WT " .. printNumString(entry.weight or 0, 5, false, 4), 1, 7)
+      Chrome.print(Strings("HT ")
+        .. measureText(HEIGHT_UNITS, entry.height or 0, 100, 4, 2), 1, 5)
+      Chrome.print(Strings("WT ")
+        .. measureText(WEIGHT_UNITS, entry.weight or 0, 10, 5, 4), 1, 7)
       self:drawPic(row, 12, 1, true)
       Chrome.box(0, 10, 20, 8)
       local ty = 11
@@ -1083,9 +1145,9 @@ function PokedexMenu:drawPlain()
   Chrome.box(13, 11, 7, 7)
   local seen, caught = self:totals()
   Chrome.print(self:mode(), 14, 12)
-  Chrome.print("SEEN", 14, 14)
+  Chrome.print(Strings("SEEN"), 14, 14)
   Chrome.printRight(tostring(seen), 19, 15)
-  Chrome.print("OWN", 14, 16)
+  Chrome.print(Strings("OWN"), 14, 16)
   Chrome.printRight(tostring(caught), 19, 17)
 end
 
@@ -1292,7 +1354,7 @@ function PokedexMenu:unownCursor(tx, ty)
     and sheet:draw((self.unownFontBase or 0x40) + Unown.NUM_UNOWN, tx, ty) then
     return
   end
-  self:text("\xe2\x96\xb6", tx, ty)
+  self:text(Strings("\xe2\x96\xb6"), tx, ty)
 end
 
 function PokedexMenu:drawUnownPic(letter, tx, ty)
@@ -1391,12 +1453,12 @@ function PokedexMenu:drawOption()
   -- `db $3b, " OPTION ", $3c`: the two end-cap tiles are the dex sheet's, not
   -- font glyphs.
   self:tile(0x3b, 0, 1)
-  self:text(Strings(OPTION_LABEL), 1, 1)
+  self:text(Strings(" OPTION "), 1, 1)
   self:tile(0x3c, 9, 1)
   local rows = self:optionRows()
   for i, row in ipairs(rows) do
-    self:text(row.label, 3, 2 + i * 2)
-    if i == self.optionIndex then self:text("\xe2\x96\xb6", 2, 2 + i * 2) end
+    self:text(Strings(row.label), 3, 2 + i * 2)
+    if i == self.optionIndex then self:text(Strings("\xe2\x96\xb6"), 2, 2 + i * 2) end
   end
   local current = rows[self.optionIndex]
   if current then
@@ -1411,24 +1473,24 @@ function PokedexMenu:drawSearch()
   self:fill(TILE_BG, 0, 0, Chrome.SCREEN_W, Chrome.SCREEN_H)
   self:border(0, 2, 14, 18)
   self:tile(0x3b, 0, 1)
-  self:text(Strings(SEARCH_LABEL), 1, 1)
+  self:text(Strings(" SEARCH "), 1, 1)
   self:tile(0x3c, 9, 1)
-  self:text("TYPE1", 3, 4)
-  self:text("TYPE2", 3, 6)
-  self:text(self:searchTypeName(1), 10, 4)
-  self:text(self:searchTypeName(2), 10, 6)
+  self:text(Strings("TYPE1"), 3, 4)
+  self:text(Strings("TYPE2"), 3, 6)
+  self:text(Strings(self:searchTypeName(1)), 10, 4)
+  self:text(Strings(self:searchTypeName(2)), 10, 6)
   -- `.TypeLeftRightArrows: db $3d, "        ", $3e` -- two of the dex sheet's
   -- own tiles at columns 8 and 17, not font glyphs.
   for _, y in ipairs({ 4, 6 }) do
     self:tile(0x3d, 8, y)
     self:tile(0x3e, 17, y)
   end
-  self:text("BEGIN SEARCH!!", 3, 13)
-  self:text("CANCEL", 3, 15)
+  self:text(Strings("BEGIN SEARCH!!"), 3, 13)
+  self:text(Strings("CANCEL"), 3, 15)
   if self.searchMessage then self:text(self.searchMessage, 3, 10) end
   local rows = { 4, 6, 13, 15 }
   local y = rows[self.searchIndex] or 4
-  self:text("\xe2\x96\xb6", 2, y)
+  self:text(Strings("\xe2\x96\xb6"), 2, y)
 end
 
 function PokedexMenu:drawPanel()
