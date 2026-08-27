@@ -45,16 +45,17 @@ local SFX_SAVE = 0x25
 local SAVING_FRAMES = 16
 local SAVED_FRAMES = 32 + 30
 
--- MenuBox coordinates after _OffsetMenuHeader(4, 0).
-local PANEL_X, PANEL_Y, PANEL_W, PANEL_H = 4, 0, 16, 10
-local LABEL_X, LABEL_Y = 5, 2
--- Continue_DisplayBadgesDex / Continue_PrintGameTime add these to the box's
--- own origin, so they are (4,0) + (13,4) / (12,6) / (9,8).
+-- MenuBox coordinates after _OffsetMenuHeader.
+-- Upper panel: x=6..19 (width 14). Labels at x=7 (border+1).
+-- YES/NO box: x=0..5 (width 6). YES at x=2..4, right border at x=5.
+local PANEL_X, PANEL_Y, PANEL_W, PANEL_H = 6, 0, 14, 10
+local LABEL_X, LABEL_Y = 7, 2
+-- Continue_DisplayBadgesDex / Continue_PrintGameTime inside the panel.
 local BADGES_X, BADGES_Y = 17, 4
 local DEX_X, DEX_Y = 16, 6
 local TIME_X, TIME_Y = 13, 8
 
-local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 0, 7, 5, 5
+local YESNO_X, YESNO_Y, YESNO_W, YESNO_H = 0, 7, 6, 5
 
 -- AlreadyASaveFileText (AskOverwriteSaveFile, engine/menus/save.asm:47) and
 -- SavingDontTurnOffThePower's own line -- one \n-joined translatable key

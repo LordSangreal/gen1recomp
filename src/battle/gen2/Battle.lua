@@ -937,7 +937,7 @@ local function checkTurn(self, mon, moveId)
   local vol = self:volatile(mon)
   if vol.recharge then
     vol.recharge = nil
-    self:emit({ kind = "message", text = name .. " must recharge!" })
+    self:emit({ kind = "message", text = Strings("%s must recharge!", name) })
     return false
   end
   -- The status arms, through the merged record.  beforeMovePriority is what
@@ -962,7 +962,7 @@ local function checkTurn(self, mon, moveId)
   -- moves once they write the same flag.
   if vol.flinched then
     vol.flinched = nil
-    self:emit({ kind = "message", text = name .. " flinched!" })
+    self:emit({ kind = "message", text = Strings("%s flinched!", name) })
     return false
   end
   -- SUBSTATUS_CONFUSED (CheckPlayerTurn past `.not_flinched`): the count
@@ -973,9 +973,9 @@ local function checkTurn(self, mon, moveId)
     vol.confuseCount = vol.confuseCount - 1
     if vol.confuseCount <= 0 then
       vol.confuseCount = nil
-      self:emit({ kind = "message", text = name .. "'s confused no more!" })
+      self:emit({ kind = "message", text = Strings("%s's confused no more!", name) })
     else
-      self:emit({ kind = "message", text = name .. " is confused!" })
+      self:emit({ kind = "message", text = Strings("%s is confused!", name) })
       if rand(self.random, 256) < 128 then
         self:confusionSelfHit(mon)
         return false
@@ -2498,7 +2498,7 @@ Battle.MOVE_EFFECTS.EFFECT_HEAL = function(self, attacker, _, _, moveId)
   end
   -- effect_commands.asm:6058, RegainedHealthText.
   self:emit({ kind = "message",
-    text = self:monName(attacker) .. " regained health!" })
+    text = Strings("%s regained health!", self:monName(attacker)) })
 end
 
 -- BattleCommand_TimeBasedHealContinue (effect_commands.asm:6374) answers the
@@ -2510,7 +2510,7 @@ for effect, wants in pairs(Effects.SUN_HEAL) do
     if (attacker.hp or 0) >= maxHp then
       self:markMissed()
       self:emit({ kind = "message",
-        text = self:monName(attacker) .. "'s HP is full!" })
+        text = Strings("%s's HP is full!", self:monName(attacker)) })
       return
     end
     -- effect_commands.asm:6396-6417, the time of day and the weather (#1751).
@@ -2518,7 +2518,7 @@ for effect, wants in pairs(Effects.SUN_HEAL) do
       self.timeOfDay)
     self:heal(attacker, math.max(1, math.floor(maxHp * fraction)))
     self:emit({ kind = "message",
-      text = self:monName(attacker) .. " regained health!" })
+      text = Strings("%s regained health!", self:monName(attacker)) })
   end
 end
 
