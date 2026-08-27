@@ -2869,7 +2869,7 @@ function BattleState:pushCaught(enemy, itemId)
     -- data/text/common_3.asm:285
     self:push({ kind = "message",
       sfx = "Sfx_SlotMachineStart", waitSfx = true,
-      text = self:name(enemy) .. "'s data was newly added to the #DEX." })
+      text = Strings("%s's data was\nnewly added to the\f#DEX.", self:name(enemy)) })
     self:push({ kind = "dex-entry", species = enemy.species })
   end
   if self.contest then
@@ -3051,7 +3051,7 @@ function BattleState:askNickname(mon)
   -- YesNoBox opens on YES; YesNoMenuHeader sets no STATICMENU_DISABLE_B.
   self.nicknameIndex = 1
   self.phase = "ask-nickname"
-  self.message = "Give a nickname to " .. self:name(mon) .. "?"
+  self.message = Strings("Give a nickname to\n%s?", self:name(mon))
   self.messageTimer = MESSAGE_FRAMES
 end
 
