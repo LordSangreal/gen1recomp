@@ -52,6 +52,7 @@ local Palettes = require("src.world.gen2.Palettes")
 local Sound = require("src.core.Sound")
 local TileSheet = require("src.ui.gen2.TileSheet")
 local Unown = require("src.core.gen2.Unown")
+local Strings = require("src.core.Strings")
 
 local HallOfFame = {}
 HallOfFame.__index = HallOfFame
@@ -160,7 +161,7 @@ function HallOfFame.monPlacements(mon, def)
     put(out, levelText(mon.level), 1, 16)
   end
   -- '<ID>' '№' '/' at (7,16), (8,16), (9,16), then five digits at (10,16).
-  put(out, "<ID>№/", 7, 16)
+  put(out, Strings("<ID>№/"), 7, 16)
   put(out, Chrome.number(mon.otId or 0, 5, true), 10, 16)
   return out
 end
@@ -202,9 +203,9 @@ function HallOfFame.playerPlacements(save)
   local time = save.playTime or {}
   local out = {}
   put(out, player.name or "GOLD", 2, 4)
-  put(out, "<ID>№/", 1, 6)
+  put(out, Strings("<ID>№/"), 1, 6)
   put(out, Chrome.number(player.id or 0, 5, true), 4, 6)
-  put(out, "PLAY TIME", 1, 8)
+  put(out, Strings("PLAY TIME"), 1, 8)
   -- `ld de, wGameTimeHours / lb bc, 2, 3`: a two-byte value in three columns,
   -- then HALLOFFAME_COLON, then the minutes with leading zeros in two.
   put(out, Chrome.number(time.hours or 0, 3), 3, 9)

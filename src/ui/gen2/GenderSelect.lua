@@ -3,7 +3,6 @@
 
 local Chrome = require("src.ui.gen2.Chrome")
 local Music = require("src.core.Music")
-local RomText = require("src.core.RomText")
 local Sound = require("src.core.Sound")
 local Strings = require("src.core.Strings")
 
@@ -14,12 +13,13 @@ GenderSelect.isOpaque = true
 -- .MenuData's two items (../pokecrystal/engine/menus/init_gender.asm:50-53),
 -- and the wPlayerGender byte each writes (`ld a, [wMenuCursorY] / dec a`).
 GenderSelect.OPTIONS = {
-  { label = "Boy", gender = "male" },
-  { label = "Girl", gender = "female" },
+  { label = Strings.source("BOY"), gender = "male" },
+  { label = Strings.source("GIRL"), gender = "female" },
 }
 
--- menu_coords 6, 4, 12, 9 -- inclusive, so 7 columns by 6 rows.
-local BOX_X, BOX_Y, BOX_W, BOX_H = 6, 4, 7, 6
+-- The translated labels are six columns wide, so leave a full inner gutter
+-- after the cursor instead of using the Crystal box's original seven columns.
+local BOX_X, BOX_Y, BOX_W, BOX_H = 5, 4, 10, 6
 local TEXT_X, TEXT_Y = BOX_X + 2, BOX_Y + 2
 local CURSOR_X = TEXT_X - 1
 local ROW_STEP = 2
@@ -56,8 +56,7 @@ function GenderSelect.new(game, opts)
   -- `db 1 ; default option`: the cursor opens on Boy.
   self.cursor = 1
   self.exit = nil
-  self.text = RomText(self.data, "_AreYouABoyOrAreYouAGirlText",
-    FALLBACK)
+  self.text = Strings(FALLBACK)
   return self
 end
 
@@ -114,7 +113,7 @@ function GenderSelect:drawPanel()
   Chrome.box(BOX_X, BOX_Y, BOX_W, BOX_H)
   for i, option in ipairs(GenderSelect.OPTIONS) do
     local row = TEXT_Y + (i - 1) * ROW_STEP
-    Chrome.print(option.label, TEXT_X, row)
+    Chrome.print(Strings(option.label), TEXT_X, row)
     if i == self.cursor then Chrome.cursor(CURSOR_X, row) end
   end
 end

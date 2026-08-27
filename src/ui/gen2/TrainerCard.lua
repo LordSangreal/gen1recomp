@@ -41,6 +41,7 @@ local Chrome = require("src.ui.gen2.Chrome")
 local GbcPalette = require("src.render.GbcPalette")
 local Gen2Save = require("src.core.gen2.Save")
 local TileSheet = require("src.ui.gen2.TileSheet")
+local Strings = require("src.core.Strings")
 
 local TrainerCard = {}
 TrainerCard.__index = TrainerCard
@@ -282,12 +283,12 @@ end
 function TrainerCard:drawTopHalf()
   local player = (self.save or {}).player or {}
   self:frame(0, 5)
-  self:print("NAME/", 2, 2)
+  self:print(Strings("NAME/"), 2, 2)
   self:print(player.name or "GOLD", 7, 2)
   self:tile(self.card, TILE_ID_NO[1], 2, 4)
   self:tile(self.card, TILE_ID_NO[2], 3, 4)
   self:print(Chrome.number(player.id or 0, 5, true), 5, 4)
-  self:print("MONEY", 2, 6)
+  self:print(Strings("MONEY"), 2, 6)
   self:print(moneyText(player.money), 7, 6)
   for x = 1, 12 do self:tile(self.card, TILE_DIVIDER, x, 3) end
   self:tile(self.card, TILE_DIVIDER_END, 13, 3)
@@ -306,8 +307,8 @@ function TrainerCard:drawCard()
 
   -- `#` is the compression byte for POKé, four tiles, so spelling it out is
   -- what the cart actually draws.
-  self:print("POKéDEX", 2, 10)
-  self:print("PLAY TIME", 2, 12)
+  self:print(Strings("POKéDEX"), 2, 10)
+  self:print(Strings("PLAY TIME"), 2, 12)
   self:print(Chrome.number(self:caughtCount(), 3), 15, 10)
 
   local time = save.playTime or {}
@@ -320,7 +321,7 @@ function TrainerCard:drawCard()
   end
   self:print(Chrome.number(time.minutes or 0, 2, true), 16, 12)
 
-  self:print("BADGES", 12, 15)
+  self:print(Strings("BADGES"), 12, 15)
   self:cursor(18, 15)
 end
 
@@ -405,21 +406,21 @@ function TrainerCard:drawPlain()
   Chrome.clear()
   if self.page == 1 then
     Chrome.box(0, 0, 20, 9)
-    Chrome.printThrough("NAME/", 2, 2, Chrome.DEFAULT_BOX_PALETTE)
+    Chrome.printThrough(Strings("NAME/"), 2, 2, Chrome.DEFAULT_BOX_PALETTE)
     Chrome.printThrough(player.name or "GOLD", 7, 2, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printThrough("ID No", 2, 4, Chrome.DEFAULT_BOX_PALETTE)
+    Chrome.printThrough(Strings("ID No"), 2, 4, Chrome.DEFAULT_BOX_PALETTE)
     Chrome.printThrough(Chrome.number(player.id or 0, 5, true), 5, 4, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printThrough("MONEY", 2, 6, Chrome.DEFAULT_BOX_PALETTE)
+    Chrome.printThrough(Strings("MONEY"), 2, 6, Chrome.DEFAULT_BOX_PALETTE)
     Chrome.printThrough(moneyText(player.money), 7, 6, Chrome.DEFAULT_BOX_PALETTE)
     Chrome.box(0, 8, 20, 10)
-    Chrome.printThrough("POKéDEX", 2, 10, Chrome.DEFAULT_BOX_PALETTE)
+    Chrome.printThrough(Strings("POKéDEX"), 2, 10, Chrome.DEFAULT_BOX_PALETTE)
     Chrome.printThrough(Chrome.number(self:caughtCount(), 3), 15, 10, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printThrough("PLAY TIME", 2, 12, Chrome.DEFAULT_BOX_PALETTE)
+    Chrome.printThrough(Strings("PLAY TIME"), 2, 12, Chrome.DEFAULT_BOX_PALETTE)
     local time = save.playTime or {}
     Chrome.printThrough(Chrome.number(time.hours or 0, 4), 11, 12, Chrome.DEFAULT_BOX_PALETTE)
     Chrome.printThrough(":", 15, 12, Chrome.DEFAULT_BOX_PALETTE)
     Chrome.printThrough(Chrome.number(time.minutes or 0, 2, true), 16, 12, Chrome.DEFAULT_BOX_PALETTE)
-    Chrome.printThrough("BADGES", 12, 15, Chrome.DEFAULT_BOX_PALETTE)
+    Chrome.printThrough(Strings("BADGES"), 12, 15, Chrome.DEFAULT_BOX_PALETTE)
     Chrome.cursorThrough(18, 15, Chrome.DEFAULT_BOX_PALETTE)
     return
   end

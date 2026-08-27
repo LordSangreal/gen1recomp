@@ -1,3 +1,4 @@
+local Strings = require("src.core.Strings")
 -- Shared Gen 2 menu chrome: boxes, tile-grid text, and the scrolling cursor
 -- list that nearly every Gold screen is built out of.
 --
@@ -383,7 +384,7 @@ end
 -- PRINTNUM_LEADINGZEROS.
 function Chrome.coinBalanceBox(coins)
   Chrome.textbox(11, 0, 7, 1)
-  Chrome.printThrough("COIN", 12, 0, Chrome.DEFAULT_BOX_PALETTE)
+  Chrome.printThrough(Strings("COIN"), 12, 0, Chrome.DEFAULT_BOX_PALETTE)
   Chrome.printThrough(Chrome.number(coins, 4, true), 13, 1, Chrome.DEFAULT_BOX_PALETTE)
 end
 
@@ -392,9 +393,9 @@ end
 -- "COIN" at (6,3) with the four-digit count at (15,3).
 function Chrome.moneyAndCoinBalanceBox(money, coins)
   Chrome.textbox(5, 0, 13, 3)
-  Chrome.printThrough("MONEY", 6, 1, Chrome.DEFAULT_BOX_PALETTE)
+  Chrome.printThrough(Strings("MONEY"), 6, 1, Chrome.DEFAULT_BOX_PALETTE)
   Chrome.printThrough(Chrome.money(money), 12, 1, Chrome.DEFAULT_BOX_PALETTE)
-  Chrome.printThrough("COIN", 6, 3, Chrome.DEFAULT_BOX_PALETTE)
+  Chrome.printThrough(Strings("COIN"), 6, 3, Chrome.DEFAULT_BOX_PALETTE)
   Chrome.printThrough(Chrome.number(coins, 4, true), 15, 3, Chrome.DEFAULT_BOX_PALETTE)
 end
 

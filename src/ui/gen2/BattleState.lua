@@ -3737,7 +3737,7 @@ function BattleState:drawPanel()
   -- required there; everywhere else a missing side is a caller bug.
   local hasPlayer = self.battle and (self.battle.player or self.tutorial)
   if not (self.battle and hasPlayer and self.battle.enemy) then
-    Chrome.printThrough("NO BATTLE", 1, 1, Chrome.DEFAULT_BOX_PALETTE)
+    Chrome.printThrough(Strings("NO BATTLE"), 1, 1, Chrome.DEFAULT_BOX_PALETTE)
     return
   end
   self:drawHud()
@@ -3772,7 +3772,7 @@ function BattleState:drawPanel()
       if i == self.menuIndex then
         Chrome.cursorThrough(tx - 1, ty, Chrome.DEFAULT_BOX_PALETTE)
       end
-      Chrome.printThrough(label, tx, ty, Chrome.DEFAULT_BOX_PALETTE)
+      Chrome.printThrough(Strings(label), tx, ty, Chrome.DEFAULT_BOX_PALETTE)
     end
   elseif self.phase == "moves"
       or (self.phase == "choose-forget" and (self.messageTimer or 0) <= 0) then
@@ -3828,8 +3828,8 @@ function BattleState:drawPanel()
       local left = (self.phase == "ask-shift" or self.phase == "ask-next-mon")
         and 1 or 14
       Chrome.box(left, 7, 6, 5)
-      Chrome.printThrough("YES", left + 2, 8, Chrome.DEFAULT_BOX_PALETTE)
-      Chrome.printThrough("NO", left + 2, 10, Chrome.DEFAULT_BOX_PALETTE)
+      Chrome.printThrough(Strings("YES"), left + 2, 8, Chrome.DEFAULT_BOX_PALETTE)
+      Chrome.printThrough(Strings("NO"), left + 2, 10, Chrome.DEFAULT_BOX_PALETTE)
       local index = self.phase == "ask-nickname" and self.nicknameIndex
         or self.phase == "ask-shift" and self.shiftIndex
         or self.phase == "ask-next-mon" and self.nextMonIndex

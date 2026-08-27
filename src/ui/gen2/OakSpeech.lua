@@ -163,8 +163,9 @@ end
 
 function OakSpeech:text(key)
   local t = self.texts[key]
-  if type(t) == "string" and #t > 0 then return t end
-  return FALLBACKS[key] or ""
+  if type(t) == "string" and #t > 0 then return Strings(t) end
+  local fallback = FALLBACKS[key]
+  return type(fallback) == "string" and Strings(fallback) or ""
 end
 
 -- ------------------------------------------------------------------ steps

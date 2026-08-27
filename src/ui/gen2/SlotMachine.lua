@@ -46,6 +46,7 @@
 local Chrome = require("src.ui.gen2.Chrome")
 local CoinCase = require("src.core.gen2.CoinCase")
 local Sound = require("src.core.Sound")
+local Strings = require("src.core.Strings")
 
 local SlotMachine = {}
 SlotMachine.__index = SlotMachine
@@ -1517,8 +1518,8 @@ function SlotMachine:drawPanel()
 
     -- PlaceYesNoBox at (14, 12): 6x5 box with YES at (16,13), NO at (16,15)
     Chrome.textbox(14, 12, 4, 3)
-    Chrome.print("YES", 16, 13)
-    Chrome.print("NO", 16, 15)
+    Chrome.print(Strings("YES"), 16, 13)
+    Chrome.print(Strings("NO"), 16, 15)
     Chrome.cursor(15, 13 + (self.againChoice - 1) * 2)
   else
     self:drawMessage()

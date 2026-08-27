@@ -152,7 +152,12 @@ function TradeMenu:lineFor(dialog)
   local texts = self.eventTables.tradeTexts
   local row = texts and texts[dialog]
   local set = self.row and self.row.dialog
-  local body = (row and set and row[set]) or FALLBACK[dialog] or ""
+  -- The cache wins over FALLBACK, but neither reaches the player untranslated:
+  -- these lines live in events.tradeTexts, which is DATA out of the cart, so a
+  -- mod has no registry to override them through.  Passing the resolved body
+  -- through the catalog gives it one -- an untranslated build gets the source
+  -- string straight back.
+  local body = Strings((row and set and row[set]) or FALLBACK[dialog] or "")
   local bufRow = (self.eventTables.tradeBuffers or {})[dialog]
   local buffers = bufRow and set and bufRow[set]
   return TradeMenu.paginate(
@@ -238,15 +243,15 @@ function TradeMenu:chose(index)
   -- NPCTradeCableText is a bare PrintText (engine/events/npc_trade.asm:37-41):
   -- nothing rings under the cable line.  The sounds all belong to the
   -- animation past it (SFX_GIVE_TRADEMON / SFX_GET_TRADEMON).
-  self:sayRaw(texts.NPCTradeCableText
-      or Strings.source("OK, connect the\nGame Link Cable."),
+  self:sayRaw(Strings(texts.NPCTradeCableText
+      or Strings.source("OK, connect the\nGame Link Cable.")),
     bufs.NPCTradeCableText,
     function()
       local given, received =
         NpcTrade.perform(self.data, self.save, self.row, index)
       self:playAnim(given, received, function()
-        self:sayRaw(texts.TradedForText
-            or Strings.source("{PLAYER} traded\n{STRBUF} for\v{STRBUF}."),
+        self:sayRaw(Strings(texts.TradedForText
+            or Strings.source("{PLAYER} traded\n{STRBUF} for\v{STRBUF}.")),
           bufs.TradedForText,
           function() self:refuse(NpcTrade.DIALOG_COMPLETE) end)
       end)
@@ -330,8 +335,8 @@ end
 
 function TradeMenu:drawYesNo(choice)
   Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
-  Chrome.print("YES", YESNO_X + 2, YESNO_Y + 1)
-  Chrome.print("NO", YESNO_X + 2, YESNO_Y + 3)
+  Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
+  Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
   Chrome.cursor(YESNO_X + 1, YESNO_Y + (choice == 1 and 1 or 3))
 end
 
@@ -339,14 +344,14 @@ function TradeMenu:draw()
   if self.message then
     self:drawTextBox(self.message.pages[self.message.page])
     if self.message.page < #self.message.pages then
-      Chrome.print("\xe2\x96\xbc", ARROW_X, ARROW_Y)
+      Chrome.print(Strings("\xe2\x96\xbc"), ARROW_X, ARROW_Y)
     end
   elseif self.confirm then
     self:drawTextBox(self.confirm.pages[self.confirm.page])
     if self.confirm.page >= #self.confirm.pages then
       self:drawYesNo(self.confirm.choice)
     else
-      Chrome.print("\xe2\x96\xbc", ARROW_X, ARROW_Y)
+      Chrome.print(Strings("\xe2\x96\xbc"), ARROW_X, ARROW_Y)
     end
   else
     self:drawTextBox(nil)

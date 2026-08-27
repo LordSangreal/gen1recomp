@@ -76,10 +76,10 @@ local BATTLE_RESULTS = { win = 0, lose = 1, draw = 2 }
 -- _PutItemInPocketText and _PocketIsFullText (data/text/common_2.asm:1351,
 -- :1361).  The cache's items.lua carries the same four names on `pocket`.
 local POCKET_NAMES = {
-  ITEM = "ITEM POCKET",
-  KEY_ITEM = "KEY POCKET",
-  BALL = "BALL POCKET",
-  TM_HM = "TM POCKET",
+  ITEM = Strings.source("ITEM POCKET"),
+  KEY_ITEM = Strings.source("KEY POCKET"),
+  BALL = Strings.source("BALL POCKET"),
+  TM_HM = Strings.source("TM POCKET"),
 }
 
 -- CompareMoney (engine/events/money.asm) reports account minus amount as one
@@ -2400,7 +2400,7 @@ end
 -- overwhelming majority of the items these boxes name really live in.
 function Vm:pocketName(item)
   local pocket = self.getItemPocketFn and item and self.getItemPocketFn(item)
-  return POCKET_NAMES[pocket] or POCKET_NAMES.ITEM
+  return Strings(POCKET_NAMES[pocket] or POCKET_NAMES.ITEM)
 end
 
 function Vm:emitFace(doFace)

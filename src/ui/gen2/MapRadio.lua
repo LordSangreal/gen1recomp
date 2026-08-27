@@ -16,6 +16,7 @@ local Chrome = require("src.ui.gen2.Chrome")
 local Nests = require("src.core.gen2.Nests")
 local Pokegear = require("src.ui.gen2.Pokegear")
 local Runtime = require("src.mods.Runtime")
+local Strings = require("src.core.Strings")
 
 local MapRadio = {}
 MapRadio.__index = MapRadio
@@ -195,8 +196,8 @@ function MapRadio:draw()
     Chrome.print("“" .. name .. "”", 1, 14)
     return
   end
-  if radio.top ~= "" then Chrome.print(radio.top, 1, 14) end
-  if radio.bottom ~= "" then Chrome.print(radio.bottom, 1, 16) end
+  if radio.top ~= "" then Chrome.print(Strings(radio.top), 1, 14) end
+  if radio.bottom ~= "" then Chrome.print(Strings(radio.bottom), 1, 16) end
 end
 
 MapRadio.STATIONS = STATIONS

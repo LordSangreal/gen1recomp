@@ -2987,7 +2987,7 @@ Battle.STATUSES = {
     catchBonus = 0, catchBonusIntended = 5,
     residual = function(_, _, maxHp)
       return math.max(1, math.floor(maxHp / Battle.POISON_FRACTION)),
-        " is hurt by poison!"
+        Strings.source("%s is hurt by poison!")
     end,
   },
   toxic = {
@@ -3001,7 +3001,7 @@ Battle.STATUSES = {
       local counter = mon.toxicCounter or 1
       mon.toxicCounter = counter + 1
       return math.max(1, math.floor(maxHp * counter / 16)),
-        " is hurt by poison!"
+        Strings.source("%s is hurt by poison!")
     end,
   },
   paralyze = {
@@ -3026,7 +3026,7 @@ Battle.STATUSES = {
     statPenalty = { stat = "attack", div = Battle.BURN_ATTACK_DIVISOR },
     residual = function(_, _, maxHp)
       return math.max(1, math.floor(maxHp / Battle.BURN_FRACTION)),
-        " is hurt by its burn!"
+        Strings.source("%s is hurt by its burn!")
     end,
   },
   freeze = {
@@ -3243,7 +3243,7 @@ function Battle:tickStatus(mon)
   local damage, text = residual(self, mon, maxHp)
   if not damage or damage <= 0 then return end
   mon.hp = math.max(0, mon.hp - damage)
-  self:emit({ kind = "message", text = name .. (text or " is hurt!") })
+  self:emit({ kind = "message", text = Strings(text or "%s is hurt!", name) })
   -- Call_PlayBattleAnim_OnlyIfVisible runs on the sufferer's own turn
   -- (core.asm:970-976); a mod status the cart never had gets nothing.
   self:emit({ kind = "damage", side = self:sideOf(mon), amount = damage,

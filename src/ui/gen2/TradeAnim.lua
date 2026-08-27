@@ -361,8 +361,10 @@ function TradeAnimView:lines(id)
     if not fallback then return nil end
     body, buffers = fallback.text, fallback.buffers
   end
+  -- Same reason as TradeMenu:lineFor: the animation's captions are cache
+  -- DATA, so the catalog is the only seam a mod has on them.
   local pages = TradeMenu.paginate(
-    TradeAnimView.fill(body, self:buffers(), buffers))
+    TradeAnimView.fill(Strings(body), self:buffers(), buffers))
   return pages[1]
 end
 

@@ -331,7 +331,7 @@ function Radio:printLine(text, nextLine)
   self.next = nextLine
   -- wRadioText itself: the buffer keeps the last line composed into it, which
   -- is what OaksPKMNTalk4's .overflow branch reprints.
-  self.text = text
+  self.text = Strings(text)
   if self.printed < 2 then
     self.printed = self.printed + 1
     if self.printed == 1 then self.top = text else self.bottom = text end

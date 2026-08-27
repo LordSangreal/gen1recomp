@@ -51,6 +51,7 @@ local PartyMenu = require("src.ui.gen2.PartyMenu")
 local Screens = require("src.ui.Screens")
 local Sound = require("src.core.Sound")
 local Unown = require("src.core.gen2.Unown")
+local Strings = require("src.core.Strings")
 
 local BoxMenu = {}
 BoxMenu.__index = BoxMenu
@@ -107,11 +108,12 @@ end
 -- the mon is written into its new home.  It stays up here until a button
 -- clears it, because it is also the only confirmation the player gets that the
 -- mon moved and where it went.
-local SAVING_LEAVE_ON = "Saving\xe2\x80\xa6 Leave ON!"
+local SAVING_LEAVE_ON =
+  Strings.source("Saving\xe2\x80\xa6 Leave ON!")
 
 -- PCString_NoReleasingEGGS, printed by BillsPC_IsMonAnEgg with SFX_WRONG
 -- (engine/pokemon/bills_pc.asm:1615-1631, string at :2200).
-local NO_RELEASING_EGGS = "No releasing EGGS!"
+local NO_RELEASING_EGGS = Strings.source("No releasing EGGS!")
 
 function BoxMenu:wantsFillScale() return true end
 function BoxMenu:drawsWidescreen() return true end
@@ -194,15 +196,15 @@ end
 -- is one row of 18 columns.
 function BoxMenu:prompt()
   -- engine/pokemon/bills_pc.asm:356-369: PrepSubmenu places PCString_WhatsUp.
-  if self.phase == "submenu" then return "What's up?" end
+  if self.phase == "submenu" then return Strings("What's up?") end
   if self.mode == "move" then
     -- .Init and .PrepInsertCursor each place their own string.
-    if self.phase == "insert" then return "Move to where?" end
-    return "Choose a <PK><MN>."
+    if self.phase == "insert" then return Strings("Move to where?") end
+    return Strings("Choose a <PK><MN>.")
   end
   -- PCString_ChooseaPKMN: _DepositPKMN.Init and BillsPC_Withdraw.Init both
   -- place this exact string (engine/pokemon/bills_pc.asm:2185).
-  return "Choose a <PK><MN>."
+  return Strings("Choose a <PK><MN>.")
 end
 
 function BoxMenu:total()
@@ -260,7 +262,9 @@ function BoxMenu:checkMailPreventBlackout()
   local party = self.save.party or {}
   -- `cp $3 / jr c, .ItsYourLastPokemon`: a party of one or two may not send
   -- one away at all, however healthy the rest of it is.
-  if #party < 3 then return false, "It's your last <PK><MN>!" end
+  if #party < 3 then
+      return false, Strings("It's your last <PK><MN>!")
+    end
   -- CheckCurPartyMonFainted (engine/pokemon/bills_pc_top.asm:171) walks the
   -- party skipping wCurPartyMon and answers carry when everything ELSE has
   -- fainted -- taking this one out would white the player out on the next step.
@@ -268,13 +272,15 @@ function BoxMenu:checkMailPreventBlackout()
   for i, mon in ipairs(party) do
     if i ~= self.index and (mon.hp or 0) > 0 then othersUsable = true break end
   end
-  if not othersUsable then return false, "No more usable <PK><MN>!" end
+  if not othersUsable then
+      return false, Strings("No more usable <PK><MN>!")
+    end
   -- wBillsPC_MonHasMail, the byte PCMonInfo set while drawing the row.  The
   -- top menu already refused to open this screen at all while any party mon
   -- holds a letter (BillsPC_MovePKMNMenu's IsAnyMonHoldingMail,
   -- src/ui/gen2/PcMenu.lua), so this is the second of two nets.
   if Mail.monHoldsMail(party[self.index]) then
-    return false, "Remove MAIL."
+    return false, Strings("Remove MAIL.")
   end
   return true
 end
@@ -393,7 +399,7 @@ function BoxMenu:checkSpaceInDestination()
   local from = self.moveFrom
   if from and from.box == self.boxIndex then return true end
   if #self:listAt(self.boxIndex) >= self:capacityAt(self.boxIndex) then
-    return false, "There's no room!"
+    return false, Strings("There's no room!")
   end
   return true
 end
@@ -609,7 +615,7 @@ function BoxMenu:askRelease()
     end
     -- engine/pokemon/bills_pc.asm:1866
     self:playMonCry(mon)
-    self.message = name .. " was released."
+    self.message = Strings("%s was released.", name)
     self.phase = nil
     self:clampIndex()
   end, { defaultNo = true }))
@@ -878,7 +884,7 @@ function BoxMenu:drawPanel()
       if i == self.index then self:drawInsertCursor(row) end
     elseif i == self:total() then
       if i == self.index then self:drawSelectionFrame(row) end
-      Chrome.print("CANCEL", LIST_X, ty)
+      Chrome.print(Strings("CANCEL"), LIST_X, ty)
     end
   end
 
@@ -894,11 +900,11 @@ function BoxMenu:drawPanel()
       self:drawPic(mon)
       -- PrintLevel always writes the single bold glyph, not ":L"
       -- (home/pokemon.asm:178-183).
-      Chrome.print("<LV>" .. tostring(mon.level or 1), PIC_X, 12)
+      Chrome.print(Strings("<LV>") .. tostring(mon.level or 1), PIC_X, 12)
       if mon.gender == "male" then
-        Chrome.print("\xe2\x99\x82", 5, 12)
+        Chrome.print(Strings("\xe2\x99\x82"), 5, 12)
       elseif mon.gender == "female" then
-        Chrome.print("\xe2\x99\x80", 5, 12)
+        Chrome.print(Strings("\xe2\x99\x80"), 5, 12)
       end
       Chrome.print(mon.name or mon.species or "?", PIC_X, 14)
       self:drawHeldIcon(mon)
