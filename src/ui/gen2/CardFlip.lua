@@ -56,6 +56,7 @@
 local Chrome = require("src.ui.gen2.Chrome")
 local CoinCase = require("src.core.gen2.CoinCase")
 local Sound = require("src.core.Sound")
+local Strings = require("src.core.Strings")
 
 local CardFlip = {}
 CardFlip.__index = CardFlip
@@ -942,7 +943,7 @@ function CardFlip:drawPanel()
 
   -- Coin box at (9, 15), 11 wide, 3 tall (interior 9x1)
   Chrome.textbox(COIN_BOX_X, COIN_BOX_Y, 9, 1)
-  Chrome.print("COIN", COIN_LABEL_X, COIN_LABEL_Y)
+  Chrome.print(Strings("COIN"), COIN_LABEL_X, COIN_LABEL_Y)
   Chrome.print(Chrome.number(self:coins(), 4, true), COIN_VALUE_X, COIN_VALUE_Y)
 
   if self.phase == "bet" then
@@ -956,8 +957,8 @@ function CardFlip:drawPanel()
   if self.phase == "ask" or self.phase == "again" then
     -- YesNoBox: a 6x5 box at (14,7) with YES at (16,8) and NO at (16,10).
     Chrome.textbox(14, 7, 4, 3)
-    Chrome.print("YES", 16, 8)
-    Chrome.print("NO", 16, 10)
+    Chrome.print(Strings("YES"), 16, 8)
+    Chrome.print(Strings("NO"), 16, 10)
     Chrome.cursor(15, 8 + (self.choice - 1) * 2)
   end
 end

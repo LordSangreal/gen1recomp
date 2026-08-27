@@ -508,7 +508,7 @@ function Game2:learnMoveOn(mon, moveId, onDone)
   end
   if ok then
     -- data/text/common_3.asm:119
-    return self:say(("%s learned\n%s!"):format(name, moveName),
+    return self:say(Strings("%s learned\n%s!", name, moveName),
       function() finish(true) end,
       TextBox.soundOpts(self, "Sfx_DexFanfare5079"))
   end
@@ -516,15 +516,14 @@ function Game2:learnMoveOn(mon, moveId, onDone)
   local askForget, pickMove, askStop
   -- DidNotLearnMoveText, then `ld b, 0` (learn.asm:110-113).
   local function decline()
-    self:say(("%s\ndid not learn\v%s."):format(name, moveName),
+    self:say(Strings("%s\ndid not learn\v%s.", name, moveName),
       function() finish(false) end)
   end
   -- ForgetMove's AskForgetMoveText + YesNoBox (learn.asm:123-127).
   askForget = function()
     self.stack:push(TextBox.new(self,
-      ("%s is\ntrying to learn\v%s.\fBut %s\ncan't learn more\vthan four moves."
-       .. "\fDelete an older\nmove to make room\vfor %s?")
-        :format(name, moveName, name, moveName),
+      Strings("%s is\ntrying to learn\v%s.\fBut %s\ncan't learn more\vthan four moves."
+       .. "\fDelete an older\nmove to make room\vfor %s?", name, moveName, name, moveName),
       nil, { choice = function(yes)
         if yes then return pickMove() end
         return askStop()
@@ -533,7 +532,7 @@ function Game2:learnMoveOn(mon, moveId, onDone)
   -- StopLearningMoveText, whose NO is `jp c, .loop` (learn.asm:104-108).
   askStop = function()
     self.stack:push(TextBox.new(self,
-      ("Stop learning\n%s?"):format(moveName), nil,
+      Strings("Stop learning\n%s?", moveName), nil,
       { choice = function(yes)
         if yes then return decline() end
         return askForget()
@@ -556,7 +555,7 @@ function Game2:learnMoveOn(mon, moveId, onDone)
         -- MoveCantForgetHMText, then `jr .loop` (learn.asm:183-197): the
         -- question stays up and the list comes back over it.
         if old and HM_MOVES[old.id] then
-          return self:say("HM moves can't be\nforgotten now.", pushList)
+          return self:say(Strings("HM moves can't be\nforgotten now."), pushList)
         end
         self.stack:pop() -- the question the list stood on
         local oldDef = (self.data.moves or {})[old and old.id]
@@ -566,8 +565,7 @@ function Game2:learnMoveOn(mon, moveId, onDone)
         -- pokemon.move_learned is raised here too.
         ModRuntime.emit("pokemon.move_learned", { mon = mon, moveId = moveId })
         -- engine/pokemon/learn.asm:115, data/text/common_3.asm:119
-        self:say(("1, 2 and… Poof!\f%s forgot\n%s.\fAnd…\f%s learned\n%s!")
-          :format(name, oldName, name, moveName),
+        self:say(Strings("1, 2 and… Poof!\f%s forgot\n%s.\fAnd…\f%s learned\n%s!", name, oldName, name, moveName),
           function() finish(true) end,
           TextBox.soundOpts(self, "Sfx_DexFanfare5079"))
       end,
@@ -576,7 +574,7 @@ function Game2:learnMoveOn(mon, moveId, onDone)
   -- MoveAskForgetText, a `done` text: the box stays while the list stands on
   -- it (learn.asm:136-137).
   pickMove = function()
-    self.stack:push(TextBox.new(self, "Which move should\nbe forgotten?", nil,
+    self.stack:push(TextBox.new(self, Strings("Which move should\nbe forgotten?"), nil,
       { stay = { onShown = pushList } }))
   end
   askForget()
@@ -611,14 +609,12 @@ function Game2:useFieldItem(itemId)
         if id == moveId then allowed = true end
       end
       if not allowed then
-        self:say(("%s can't learn %s!"):format(
-          require("src.battle.gen2.Mon").displayName(mon), moveName))
+        self:say(Strings("%s can't learn %s!", require("src.battle.gen2.Mon").displayName(mon), moveName))
         return
       end
       for _, move in ipairs(mon.moves or {}) do
         if move.id == moveId then
-          self:say(("%s already knows %s!"):format(
-            require("src.battle.gen2.Mon").displayName(mon), moveName))
+          self:say(Strings("%s already knows %s!", require("src.battle.gen2.Mon").displayName(mon), moveName))
           return
         end
       end

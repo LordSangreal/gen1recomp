@@ -31,6 +31,7 @@ local Logger = require("src.core.Logger")
 local Runtime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
 local Sound = require("src.core.Sound")
+local Strings = require("src.core.Strings")
 
 local ItemPcMenu = {}
 ItemPcMenu.__index = ItemPcMenu
@@ -40,8 +41,6 @@ ItemPcMenu.isOpaque = true
 -- the same pair src/core/gen2/MomShopping.lua enforces for Mom's deliveries.
 local PC_ITEM_CAPACITY = 50
 local MAX_STACK = 99
-
-local function stacksFor(n) return math.ceil((n or 0) / MAX_STACK) end
 
 -- PlayersPCMenuData .PlayersPCMenuPointers strings, verbatim.  .WhichPC picks
 -- which rows a caller sees: PLAYERSPC_NORMAL ends on LOG OFF, PLAYERSPC_HOUSE
@@ -114,8 +113,8 @@ function ItemPcMenu.new(game, opts)
   self.confirm = nil
   if self.house then
     -- _PlayersHousePC: PC_PlayBootSound, then PlayersPCTurnOnText.
-    self:playPcSfx("Sfx_BootPc")
-    self:say({ { "{PLAYER} turned on", "the PC." } })
+    self:playSfx("Sfx_BootPc")
+    self:say({ Strings.lines("{PLAYER} turned on\nthe PC.") })
   end
   return self
 end
@@ -175,24 +174,18 @@ function ItemPcMenu:rebuild()
   for id, count in pairs(pc) do
     if (count or 0) > 0 then
       local def = self:def(id)
-      local remaining = count
-      while remaining > 0 do
-        local n = math.min(remaining, MAX_STACK)
-        rows[#rows + 1] = {
-          id = id, count = n,
-          name = (def and def.name) or id,
-          index = def and def.index or math.huge,
-        }
-        remaining = remaining - n
-      end
+      rows[#rows + 1] = {
+        id = id, count = count,
+        name = (def and def.name) or id,
+        index = def and def.index or math.huge,
+      }
     end
   end
   -- wPCItems keeps acquisition order; without that recorded, item id order is
   -- the stable choice, the same sort the PACK uses.
   table.sort(rows, function(a, b)
     if a.index ~= b.index then return a.index < b.index end
-    if a.id ~= b.id then return a.id < b.id end
-    return a.count > b.count
+    return a.id < b.id
   end)
   self.rows = rows
   if self.listIndex > #rows + 1 then self.listIndex = #rows + 1 end
@@ -214,18 +207,20 @@ function ItemPcMenu:ensureVisible()
     math.max(0, self:listTotal() - VISIBLE_ROWS)))
 end
 
--- ReceiveItem over wPCItems: the add tops up every existing stack of that id
--- and spills the rest into a new one, so it only needs a free stack when the
--- room in place is short.  False is the no-carry the deposit turns into
+-- ReceiveItem over wPCItems: a new id needs one of the fifty stacks, a grown
+-- one may not pass 99.  False is the no-carry the deposit turns into
 -- _PlayersPCNoRoomDepositText.
--- engine/items/items.asm:156 PutItemInPocket
 function ItemPcMenu:pcAdd(id, qty)
   local pc = self.save.pcItems
   local held = pc[id] or 0
-  local used = 0
-  for _, count in pairs(pc) do used = used + stacksFor(count) end
-  local need = stacksFor(held + qty) - stacksFor(held)
-  if used + need > PC_ITEM_CAPACITY then return false end
+  if held == 0 then
+    local stacks = 0
+    for _, count in pairs(pc) do
+      if (count or 0) > 0 then stacks = stacks + 1 end
+    end
+    if stacks >= PC_ITEM_CAPACITY then return false end
+  end
+  if held + qty > MAX_STACK then return false end
   pc[id] = held + qty
   return true
 end
@@ -273,12 +268,12 @@ function ItemPcMenu:withdraw(row, qty)
   -- PlayerWithdrawItemMenu .withdraw: ReceiveItem into the bag first; only a
   -- carry tosses the stack out of the PC.
   if not Bag.add(self.save, row.id, qty, self.data) then
-    self:say({ { "There's no room", "for more items." } })
+    self:say({ Strings.lines("There's no room\nfor more items.") })
     return
   end
   self:pcRemove(row.id, qty)
   self:rebuild()
-  self:say({ { ("Withdrew %d"):format(qty), row.name .. "(S)." } })
+  self:say({ Strings.lines("Withdrew %d\n%s(S).", qty, row.name) })
 end
 
 function ItemPcMenu:chooseWithdraw()
@@ -294,24 +289,24 @@ function ItemPcMenu:chooseWithdraw()
     return
   end
   self:askQuantity(row.count,
-    { "How many do you", "want to withdraw?" },
+    Strings.lines("How many do you\nwant to withdraw?"),
     function(qty) self:withdraw(row, qty) end)
 end
 
 function ItemPcMenu:deposit(id, name, qty)
   if not self:pcAdd(id, qty) then
-    self:say({ { "There's no room to", "store items." } })
+    self:say({ Strings.lines("There's no room to\nstore items.") })
     return
   end
   Bag.remove(self.save, id, qty)
   if self.pack then self.pack:rebuild() end
-  self:say({ { ("Deposited %d"):format(qty), name .. "(S)." } })
+  self:say({ Strings.lines("Deposited %d\n%s(S).", qty, name) })
 end
 
 function ItemPcMenu:enterDeposit()
   -- .CheckItemsInBag: an empty bag never opens the PACK.
   if bagIsEmpty(self.save) then
-    self:say({ { "No items here!" } })
+    self:say({ Strings.lines("No items here!") })
     return
   end
   self.phase = "deposit"
@@ -342,7 +337,7 @@ function ItemPcMenu:offerToDeposit(id, count)
     return
   end
   self:askQuantity(count,
-    { "How many do you", "want to deposit?" },
+    Strings.lines("How many do you\nwant to deposit?"),
     function(qty) self:deposit(id, name, qty) end)
 end
 
@@ -354,15 +349,15 @@ function ItemPcMenu:chooseToss()
   end
   -- TossItemFromPC .key_item -> .CantToss.
   if self:cantToss(row.id) then
-    self:say({ { "That's too impor-", "tant to toss out!" } })
+    self:say({ Strings.lines("That's too impor-\ntant to toss out!") })
     return
   end
   self:askQuantity(row.count,
-    { "Toss out how many", row.name .. "(S)?" },
+    Strings.lines("Toss out how many\n%s(S)?", row.name),
     function(qty)
       -- .ItemsThrowAwayText's yes/no sits between the count and the toss.
       self.confirm = {
-        prompt = { ("Throw away %d"):format(qty), row.name .. "(S)?" },
+        prompt = Strings.lines("Throw away %d\n%s(S)?", qty, row.name),
         choice = 1,
         onYes = function()
           self:pcRemove(row.id, qty)
@@ -548,7 +543,7 @@ function ItemPcMenu:drawList()
       end
     elseif i == self:listTotal() then
       if i == self.listIndex then Chrome.cursor(5, ty) end
-      Chrome.print("CANCEL", 6, ty)
+      Chrome.print(Strings("CANCEL"), 6, ty)
     end
   end
   -- UpdateItemDescription under the list.
@@ -577,14 +572,14 @@ function ItemPcMenu:drawPanel()
     -- _PlayersPCAskWhatDoText, printed under the list the whole time.  The
     -- box goes down first: the menu window overlays it where the house's
     -- six-row list runs past row 12, the way the cart's windows stack.
-    self:drawBottomLines({ "What do you want", "to do?" })
+    self:drawBottomLines(Strings.lines("What do you want\nto do?"))
     -- PlayersPCMenuData is menu_coords 0, 0, 15, 12; the house list is one
     -- row taller than that box, so size it to the entries.
     Chrome.box(0, 0, 16, math.max(12, #self.entries * 2 + 2))
     for i, entry in ipairs(self.entries) do
       local ty = i * 2
       if i == self.index then Chrome.cursor(1, ty) end
-      Chrome.print(entry.label, 2, ty)
+      Chrome.print(Strings(entry.label), 2, ty)
     end
   end
 
@@ -597,8 +592,8 @@ function ItemPcMenu:drawPanel()
   elseif self.confirm then
     self:drawBottomLines(self.confirm.prompt)
     Chrome.box(14, 7, 6, 5)
-    Chrome.print("YES", 16, 8)
-    Chrome.print("NO", 16, 10)
+    Chrome.print(Strings("YES"), 16, 8)
+    Chrome.print(Strings("NO"), 16, 10)
     Chrome.cursor(15, self.confirm.choice == 1 and 8 or 10)
   elseif self.message then
     self:drawBottomLines(self.message.pages[self.message.page])

@@ -44,6 +44,11 @@ local TAB_LINE = { "[MODS] PROF ERRS", "MODS [PROF] ERRS", "MODS PROF [ERRS]" }
 local LIST_TOP = 3   -- first content row (tile y)
 local LIST_ROWS = 11 -- single-line rows in the scroll region
 
+-- Detail screen: the description starts here and the footer owns this line,
+-- so the action rows live strictly between them (see ManagerState:drawDetail).
+local DESC_ROW = 6
+local FOOTER_ROW = 15
+
 -- what the mod declared it does, shown before the player enables it
 local PERMISSION_ROWS = {
   engine_internals = { glyph = "!", text = "PATCHES ENGINE CODE" },
@@ -1006,6 +1011,17 @@ function ManagerState:setOption(modId, key, value)
     loader.modOptions[modId][key] = value
   end
   self:persistOptions()
+  -- persistOptions routes through game:writeOptions(), which Gold's Game2
+  -- does not define -- and Game2's save.options is the "gold" sub-block
+  -- (Save.OPTIONS_KEY), not the top-level table Loader reads modOptions
+  -- from.  So under Gold the write above is a no-op aimed at the wrong
+  -- table, and a mod's options silently reset on every boot.  Persist them
+  -- directly through saveOptions' documented partial path instead: a
+  -- caller-supplied subset folds over the on-disk file rather than
+  -- replacing it, and the modOptions sub-tree merges per mod.
+  if loader and loader.modOptions then
+    SaveData.saveOptions({ modOptions = loader.modOptions })
+  end
   if loader and loader.events then
     loader.events:emit("mod.options_changed",
       { mod = modId, key = key, value = value })
@@ -1046,6 +1062,28 @@ function ManagerState:buildOptionRows(m, schema)
     end
     self.cursor = clampIndex(self.cursor, #self.optionRows)
   end
+  -- A row that only takes effect on the next boot has to say so.  This
+  -- screen's footer promises "(NO RESTART)", which is right for a mod that
+  -- reads its options live and WRONG for one that decides at LOAD TIME what
+  -- to register -- a translation choosing which catalogs to apply is exactly
+  -- that, and a player who flips the row, sees nothing change and concludes
+  -- the option is broken is the failure this avoids.
+  --
+  -- `requires_restart` is an optional row field in the sense RFC 0008
+  -- allows: an engine that does not know it ignores it and behaves as before,
+  -- so a mod carrying it still loads on an older build.
+  local needsRestart = false
+  for _, row in ipairs(schema) do
+    if type(row) == "table" and row.requires_restart
+        and OPTION_TYPES[row.type] then
+      needsRestart = true
+    end
+  end
+  self.optionsNeedRestart = needsRestart
+  local function applied(row)
+    refresh(row.key)
+    if row.requires_restart then self:notify(Strings("RESTART TO APPLY")) end
+  end
   for _, row in ipairs(schema) do
     if type(row) ~= "table" or type(row.key) ~= "string" or row.key == ""
         or not OPTION_TYPES[row.type] then
@@ -1061,7 +1099,7 @@ function ManagerState:buildOptionRows(m, schema)
         end,
         step = function()
           self:setOption(modId, row.key, not self:optionValue(modId, row))
-          refresh(row.key)
+          applied(row)
           return true
         end }
     elseif row.type == "choice" then
@@ -1084,7 +1122,7 @@ function ManagerState:buildOptionRows(m, schema)
           end
           index = clampIndex(index + dir, #choices)
           self:setOption(modId, row.key, choices[index][2])
-          refresh(row.key)
+          applied(row)
           return true
         end }
     elseif row.type == "number" then
@@ -1100,7 +1138,7 @@ function ManagerState:buildOptionRows(m, schema)
         step = function(_, dir)
           local cur = tonumber(self:optionValue(modId, row)) or 0
           self:setOption(modId, row.key, clamp(cur + dir * (row.step or 1)))
-          refresh(row.key)
+          applied(row)
           return true
         end,
         activate = function()
@@ -1111,7 +1149,7 @@ function ManagerState:buildOptionRows(m, schema)
             onDone = function(qty)
               if qty then
                 self:setOption(modId, row.key, clamp(qty))
-                refresh(row.key)
+                applied(row)
               end
             end,
           }))
@@ -1129,7 +1167,7 @@ function ManagerState:buildOptionRows(m, schema)
             default = self:optionValue(modId, row),
             onDone = function(name)
               self:setOption(modId, row.key, name)
-              refresh(row.key)
+              applied(row)
             end,
           }))
         end }
@@ -1146,7 +1184,8 @@ function ManagerState:buildOptionRows(m, schema)
       end
       self.optionRows = self:buildOptionRows(m, schema)
       self.cursor = clampIndex(self.cursor, #self.optionRows)
-      self:notify("DEFAULTS RESTORED")
+      self:notify(needsRestart and Strings("RESTART TO APPLY")
+        or "DEFAULTS RESTORED")
     end }
   return rows
 end
@@ -1243,6 +1282,31 @@ function ManagerState:drawList()
   end
 end
 
+-- Where the detail screen's action rows go, and how many description lines
+-- are left over once they have their space.
+--
+-- The block is laid out UPWARD from the footer, not downward from a fixed
+-- row 11.  A mod with five rows -- one that declares options is enough:
+-- DISABLE, OPTIONS.., FOR .., GH .., BACK -- used to put its last row on
+-- line 15, exactly where drawFooter writes "A:CHOOSE B:BACK", and the two
+-- drew on top of each other.  Anchored to the bottom, the last row lands on
+-- line 14 whatever the count and the description gives up the height
+-- instead; it already scrolls, so it loses nothing else.
+--
+-- More rows than the block can hold (a mod erroring with every optional row
+-- present) scrolls to keep the cursor inside rather than spilling over the
+-- footer again.
+function ManagerState.detailLayout(count, cursor)
+  local top = math.max(FOOTER_ROW - count, DESC_ROW + 1)
+  local fits = FOOTER_ROW - top
+  local first = 1
+  if count > fits then
+    first = math.min(math.max((cursor or 1) - fits + 1, 1), count - fits + 1)
+  end
+  return { top = top, fits = fits, first = first,
+           visible = math.max(top - DESC_ROW, 1) }
+end
+
 function ManagerState:drawDetail()
   local m = self.currentMod
   if not m then return end
@@ -1263,19 +1327,19 @@ function ManagerState:drawDetail()
                 16, 4 * 8, 17)
   local lines = wrap(m.error and ("FAILED: " .. m.error)
     or (m.note and ("SKIPPED: " .. m.note)) or m.description, 16)
-  local visible = 5
-  for i = 1, visible do
+  local rows = self:rowsForScreen()
+  local at = ManagerState.detailLayout(#rows, self.cursor)
+  for i = 1, at.visible do
     local line = lines[self.descScroll + i - 1]
     if not line then break end
-    Font.draw(line, 16, (5 + i) * 8)
+    Font.draw(line, 16, (DESC_ROW + i - 1) * 8)
   end
-  if self.descScroll + visible <= #lines then
-    Font.drawCode(Theme.moreArrow, 17 * 8, 10 * 8)
+  if self.descScroll + at.visible <= #lines then
+    Font.drawCode(Theme.moreArrow, 17 * 8, (at.top - 1) * 8)
   end
-  local rows = self:rowsForScreen()
-  local y = 11
-  for i, row in ipairs(rows) do
-    drawTruncated(row.label, 32, y * 8, 15)
+  local y = at.top
+  for i = at.first, math.min(at.first + at.fits - 1, #rows) do
+    drawTruncated(rows[i].label, 32, y * 8, 15)
     if i == self.cursor then Font.drawCode(Theme.cursor, 24, y * 8) end
     y = y + 1
   end
@@ -1350,7 +1414,9 @@ function ManagerState:draw()
     OptionRows.draw(self.game, self.optionRows or {}, self.cursor,
                     self.scroll or 0)
     love.graphics.setColor(0, 0, 0, 1)
-    Font.draw(self.notice or Strings("B:DONE (NO RESTART)"), 8, 136)
+    Font.draw(self.notice or (self.optionsNeedRestart
+      and Strings("B:DONE - RESTART") or Strings("B:DONE (NO RESTART)")),
+      8, 136)
     love.graphics.setColor(1, 1, 1, 1)
     if self.overlay then self:drawOverlay() end
     return

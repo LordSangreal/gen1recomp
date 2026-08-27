@@ -1,3 +1,5 @@
+local Strings = require("src.core.Strings")
+
 -- Gen 2 move effects, as data plus the small amount of arithmetic each one
 -- needs.  Ported from engine/battle/effect_commands.asm; the battle engine
 -- (src/battle/gen2/Battle.lua) owns the turn loop and calls in here for what a
@@ -88,10 +90,15 @@ end
 -- BattleCommand_StatUpMessage / StatDownMessage: one stage is "rose"/"fell",
 -- two are "sharply rose" / "sharply fell".
 function Effects.stageMessage(name, stat, applied)
-  local label = Effects.STAT_NAMES[stat] or stat
-  local sharply = math.abs(applied) >= 2 and "sharply " or ""
-  local verb = applied > 0 and "rose" or "fell"
-  return ("%s's %s %s%s!"):format(name, label, sharply, verb)
+  local label = Strings(Effects.STAT_NAMES[stat] or stat)
+  -- Uma frase inteira por caso em vez de "sharply " .. "rose": o adverbio e o
+  -- verbo so significam algo juntos, e em outra lingua nem ficam nesta ordem.
+  local forma
+  if applied >= 2 then forma = "%s's %s sharply rose!"
+  elseif applied > 0 then forma = "%s's %s rose!"
+  elseif applied <= -2 then forma = "%s's %s sharply fell!"
+  else forma = "%s's %s fell!" end
+  return Strings(forma, name, label)
 end
 
 -- ------------------------------------------------------------------ hit count

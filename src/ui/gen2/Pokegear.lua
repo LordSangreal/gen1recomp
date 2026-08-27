@@ -332,7 +332,7 @@ function Radio:printLine(text, nextLine)
   self.next = nextLine
   -- wRadioText itself: the buffer keeps the last line composed into it, which
   -- is what OaksPKMNTalk4's .overflow branch reprints.
-  self.text = text
+  self.text = Strings(text)
   if self.printed < 2 then
     self.printed = self.printed + 1
     if self.printed == 1 then self.top = text else self.bottom = text end
@@ -1119,7 +1119,7 @@ end
 -- non-trainer is its NonTrainerCallerNames string and nothing under it.
 function Pokegear:contactRow(id)
   local name, className = Phone.contactName(id, self.trainers)
-  return (name or "----------") .. ":", className
+  return (Strings(name) or "----------") .. ":", (className and Strings(className) or nil)
 end
 
 function Pokegear:update(_dt)
@@ -2329,7 +2329,7 @@ function Pokegear:drawPhone()
       or self:phoneText("GearEllipse"), 18)
     for i = 1, math.min(#lines, 3) do self:text(lines[i], 1, 13 + i) end
   else
-    self:printBoxText(self:phoneText("AskWhoCall"))
+    self:printBoxText(Strings(self:phoneText("AskWhoCall")))
   end
   -- PokegearPhone_UpdateDisplayList: every one of the four visible slots is
   -- drawn, empty or not, from (2,4) two rows apart.  GetCallerClassAndName
@@ -2358,7 +2358,7 @@ function Pokegear:drawPhoneSubmenu()
   self:textbox(menu.x, menu.y, 8, menu.rows * 2)
   for index, label in ipairs(menu.entries) do
     local ty = menu.textY + (index - 1) * 2
-    self:text(label, menu.textX, ty)
+    self:text(Strings(label), menu.textX, ty)
   end
   self:cursor(menu.textX - 1, menu.textY + self.phoneSubmenuCursor * 2)
 end
@@ -2435,8 +2435,7 @@ function Pokegear:drawPlain()
     end
     Chrome.cursor(1, 4 + self.phoneCursor * 2)
     Chrome.textbox(0, 12, 18, 4)
-    Chrome.printWrapped(self.call and (self.call.text or "")
-      or self:phoneText("AskWhoCall"), 1, 14, 18, 3)
+    Chrome.printWrapped(Strings(self.call and (self.call.text or "") or self:phoneText("AskWhoCall")), 1, 14, 18, 3)
     self:drawPhoneSubmenu()
   else
     Chrome.box(0, 4, 20, 14)

@@ -129,6 +129,22 @@ function Strings.source(text)
   return text
 end
 
+-- One box page, translated and split on newlines.
+--
+-- The Gen 2 screens hold a page as a list of lines, one string each, and a
+-- catalog keyed on those lines would put the translation in a straitjacket:
+-- the same sentence does not break in the same places in another language,
+-- and a per-line key cannot move a word across the break.  Keying the whole
+-- page on one source -- newlines and all -- leaves the breaks to the catalog
+-- and prints the source's own layout when nothing translates it.
+function Strings.lines(source, ...)
+  local out = {}
+  for line in (Strings.get(source, ...) .. "\n"):gmatch("(.-)\n") do
+    out[#out + 1] = line
+  end
+  return out
+end
+
 setmetatable(Strings, { __call = function(_, ...) return Strings.get(...) end })
 
 return Strings

@@ -47,6 +47,7 @@ local Chrome = require("src.ui.gen2.Chrome")
 local CoinCase = require("src.core.gen2.CoinCase")
 local Save = require("src.core.gen2.Save")
 local Sound = require("src.core.Sound")
+local Strings = require("src.core.Strings")
 
 local PrizeMenu = {}
 PrizeMenu.__index = PrizeMenu
@@ -162,7 +163,7 @@ PrizeMenu.TEXTS = {
       page("prizes!")),
     which = page("Which prize would", "you like?"),
     confirm = function(name)
-      return pages(page("OK, so you wanted", ("a %s?"):format(name)))
+      return pages(page(Strings("OK, so you wanted\na %s?", name)))
     end,
     hereYouGo = pages(page("Here you go!")),
     notEnoughCoins = pages(page("You don't have", "enough coins.")),
@@ -176,7 +177,7 @@ PrizeMenu.TEXTS = {
       page("fabulous prizes!")),
     which = page("Which prize would", "you like?"),
     confirm = function(name)
-      return pages(page(("%s."):format(name), "Is that right?"))
+      return pages(page(Strings("%s.\nIs that right?", name)))
     end,
     hereYouGo = pages(page("Here you go!")),
     notEnoughCoins = pages(page("Sorry! You need", "more coins.")),
@@ -370,12 +371,28 @@ function PrizeMenu:buildPrizes()
   self.prizes = out
 end
 
+-- Cada PAGINA e uma entrada do catalogo, com as linhas juntas por `\n`.
+-- Traduzir linha a linha prenderia a quebra a do ingles; assim a traducao
+-- escolhe a propria.  Roda aqui, e nao em PrizeMenu.TEXTS, porque aquela
+-- tabela e do modulo e carrega antes do mod.
+local function localize(list)
+  local out = {}
+  for i, page in ipairs(list or {}) do
+    local lines = {}
+    for line in (Strings(table.concat(page, "\n")) .. "\n"):gmatch("(.-)\n") do
+      lines[#lines + 1] = line
+    end
+    out[i] = lines
+  end
+  return out
+end
+
 function PrizeMenu:say(list, onDone)
-  self.message = { pages = list or {}, page = 1, onDone = onDone }
+  self.message = { pages = localize(list), page = 1, onDone = onDone }
 end
 
 function PrizeMenu:ask(list, onYes, onNo)
-  self.confirm = { pages = list or {}, page = 1, choice = 1,
+  self.confirm = { pages = localize(list), page = 1, choice = 1,
     onYes = onYes, onNo = onNo }
 end
 
@@ -529,7 +546,7 @@ end
 -- ------------------------------------------------------------------- draw
 function PrizeMenu:drawCoinBox()
   Chrome.textbox(COIN_BOX_X, COIN_BOX_Y, COIN_BOX_W - 2, COIN_BOX_H - 2)
-  Chrome.print("COIN", COIN_LABEL_X, COIN_LABEL_Y)
+  Chrome.print(Strings("COIN"), COIN_LABEL_X, COIN_LABEL_Y)
   Chrome.print(Chrome.number(PrizeMenu.coins(self.save), 4, true),
     COIN_VALUE_X, COIN_VALUE_Y)
 end
@@ -562,8 +579,8 @@ function PrizeMenu:drawPanel()
   end
   if self.confirm and self.confirm.page >= #self.confirm.pages then
     Chrome.textbox(YESNO_X, YESNO_Y, YESNO_W - 2, YESNO_H - 2)
-    Chrome.print("YES", YESNO_X + 2, YESNO_Y + 1)
-    Chrome.print("NO", YESNO_X + 2, YESNO_Y + 3)
+    Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
+    Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
     Chrome.cursor(YESNO_X + 1, YESNO_Y + 1 + (self.confirm.choice - 1) * 2)
   end
 end

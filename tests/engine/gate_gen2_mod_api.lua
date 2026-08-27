@@ -171,12 +171,16 @@ end
 --   apricorns       src/core/gen2/Apricorns.lua:useRegistry
 --   landmarks       src/core/gen2/Nests.lua:landmarkId / landmark
 --   radio_channels  src/ui/gen2/MapRadio.lua:channelRecord
+--   pokedex         src/ui/gen2/PokedexMenu.lua:drawEntry / drawList,
+--                   which read self.dex.entries[species] straight off
+--                   data.gen2Pokedex
 for name, path in pairs({ held_items = "gen2HeldItems",
                           phone_contacts = "gen2PhoneContacts",
                           decorations = "gen2Decorations",
                           apricorns = "gen2Apricorns",
                           landmarks = "gen2Landmarks.landmarks",
-                          radio_channels = "gen2RadioChannels" }) do
+                          radio_channels = "gen2RadioChannels",
+                          pokedex = "gen2Pokedex.entries" }) do
   local spec = Schemas.REGISTRIES[name]
   T.check(spec ~= nil, "catalog still has registry: " .. name)
   T.eq(Schemas.targetFor(name, spec, 2), path,

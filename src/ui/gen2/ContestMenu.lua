@@ -33,6 +33,7 @@
 
 local BugContest = require("src.core.gen2.BugContest")
 local Chrome = require("src.ui.gen2.Chrome")
+local Strings = require("src.core.Strings")
 
 local ContestMenu = {}
 ContestMenu.__index = ContestMenu
@@ -155,8 +156,8 @@ function ContestMenu:drawYesNo()
   -- STATICMENU_CURSOR, and YesNoMenuHeader sets STATICMENU_NO_TOP_SPACING so
   -- there is no third row of padding -- YES at (16,8), NO at (16,10), cursor
   -- column 15.
-  Chrome.print("YES", YESNO_X + 2, YESNO_Y + 1)
-  Chrome.print("NO", YESNO_X + 2, YESNO_Y + 3)
+  Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
+  Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
   Chrome.cursor(YESNO_X + 1, YESNO_Y + (self.choice == 1 and 1 or 3))
 end
 

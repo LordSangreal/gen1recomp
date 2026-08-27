@@ -58,16 +58,16 @@ PcMenu.isOpaque = true
 -- draws two tiles rather than seven -- which is the only reason "MOVE <PK><MN>
 -- W/O MAIL" fits inside a 20-tile screen.
 local ENTRIES = {
-  { id = "withdraw", label = "WITHDRAW <PK><MN>" },
-  { id = "deposit", label = "DEPOSIT <PK><MN>" },
-  { id = "changebox", label = "CHANGE BOX" },
-  { id = "move", label = "MOVE <PK><MN> W/O MAIL" },
+  { id = "withdraw", label = Strings("WITHDRAW <PK><MN>") },
+  { id = "deposit", label = Strings("DEPOSIT <PK><MN>") },
+  { id = "changebox", label = Strings("CHANGE BOX") },
+  { id = "move", label = Strings("MOVE <PK><MN> W/O MAIL") },
   -- PLAYERSPCITEM_MAIL_BOX (engine/events/pokecenter_pc.asm), which BOTH
   -- .WhichPC lists carry: the MAILBOX is on the item PC in a Pokecenter and in
   -- the bedroom alike, unlike DECORATION below.  It sits here because this
   -- port folds the item PC's menu into the storage one.
-  { id = "mailbox", label = "MAIL BOX" },
-  { id = "seeya", label = "SEE YA!" },
+  { id = "mailbox", label = Strings("MAIL BOX") },
+  { id = "seeya", label = Strings("SEE YA!") },
 }
 
 -- PLAYERSPCITEM_DECORATION, the one row the bedroom's PC has that a
@@ -75,7 +75,7 @@ local ENTRIES = {
 -- carries it, PLAYERSPC_NORMAL does not).  It belongs to the item PC's menu on
 -- the cart, which this port folds into the storage menu the same way both PCs
 -- are folded -- so it hangs off the same list, gated on `house`.
-local DECORATION = { id = "decoration", label = "DECORATION" }
+local DECORATION = { id = "decoration", label = Strings("DECORATION") }
 
 -- The exit row.  It is a member of ENTRIES (it is one of _BillsPC's five), but
 -- the list is assembled without it and it is put back on the end AFTER the
@@ -441,7 +441,7 @@ function PcMenu:drawPanel()
       return
     end
     Chrome.box(0, 14, 20, 4)
-    Chrome.print("Which BOX?", 1, 16)
+    Chrome.print(Strings("Which BOX?"), 1, 16)
     love.graphics.setColor(1, 1, 1, 1)
     return
   end
@@ -452,7 +452,7 @@ function PcMenu:drawPanel()
   -- the way the cart's windows stack (src/ui/gen2/ItemPcMenu.lua does the
   -- same with the house's six-row item list).
   Chrome.box(0, 12, 20, 6)
-  Chrome.print("What?", 1, 14)
+  Chrome.print(Strings("What?"), 1, 14)
 
   -- ClearPCItemScreen: Textbox at (0,0) with a 10x18 interior, and a second
   -- at (0,12) with a 4x18 one.  GetMenuTextStartCoord then puts the first

@@ -68,6 +68,7 @@ local CommonText = require("src.core.gen2.CommonText")
 local Save = require("src.core.gen2.Save")
 local Screens = require("src.ui.Screens")
 local Sound = require("src.core.Sound")
+local Strings = require("src.core.Strings")
 
 -- PlayTransactionSound (engine/items/mart.asm): `call WaitSFX` then
 -- SFX_TRANSACTION.  Both tills ring it -- the buy flow at BuyMenuLoop's
@@ -878,7 +879,7 @@ function MartMenu:drawTopMenu()
   for i, label in ipairs(TOP_ITEMS) do
     local ty = TOP_LABEL_Y + (i - 1) * TOP_SPACING
     if i == self.topIndex then Chrome.cursor(TOP_LABEL_X - 1, ty) end
-    Chrome.print(label, TOP_LABEL_X, ty)
+    Chrome.print(Strings(label), TOP_LABEL_X, ty)
   end
 end
 
@@ -924,7 +925,7 @@ function MartMenu:drawBuyList()
       printPriceOpaque(entry.price, ty + 1)
     elseif i == self:total() then
       if i == self.index then Chrome.cursor(LIST_X - 1, ty) end
-      Chrome.print("CANCEL", LIST_X, ty)
+      Chrome.print(Strings("CANCEL"), LIST_X, ty)
     end
   end
   -- SCROLLINGMENU_DISPLAY_ARROWS: the ▲ only appears once the list has been
@@ -961,8 +962,8 @@ end
 
 function MartMenu:drawYesNo(choice)
   Chrome.box(YESNO_X, YESNO_Y, YESNO_W, YESNO_H)
-  Chrome.print("YES", YESNO_X + 2, YESNO_Y + 1)
-  Chrome.print("NO", YESNO_X + 2, YESNO_Y + 3)
+  Chrome.print(Strings("YES"), YESNO_X + 2, YESNO_Y + 1)
+  Chrome.print(Strings("NO"), YESNO_X + 2, YESNO_Y + 3)
   Chrome.cursor(YESNO_X + 1, YESNO_Y + (choice == 1 and 1 or 3))
 end
 

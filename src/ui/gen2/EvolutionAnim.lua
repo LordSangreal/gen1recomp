@@ -31,6 +31,7 @@ local Chrome = require("src.ui.gen2.Chrome")
 local Evolution = require("src.core.gen2.Evolution")
 local GbcPalette = require("src.render.GbcPalette")
 local Mon = require("src.battle.gen2.Mon")
+local Strings = require("src.core.Strings")
 local Music = require("src.core.Music")
 local Palettes = require("src.world.gen2.Palettes")
 local Sound = require("src.core.Sound")
@@ -159,7 +160,7 @@ function EvolutionAnim:setPhase(phase)
     -- PrintText EvolvingText, then `ld c, 50 / call DelayFrames`.  The pics are
     -- not placed yet: on the cart the battle screen is still up behind this
     -- line and ClearBox only wipes rows 0..11 once the delay is over.
-    self.lines = { "What? " .. self.nick, "is evolving!" }
+    self.lines = Strings.lines("What? %s\nis evolving!", self.nick)
     self.timer = Evolution.EVOLVING_FRAMES
     return
   end
@@ -206,13 +207,13 @@ function EvolutionAnim:setPhase(phase)
 
   if phase == "stopped" then
     -- CancelEvolution: StoppedEvolvingText over the pic, then ClearTilemap.
-    self.lines = { "Huh? " .. self.nick, "stopped evolving!" }
+    self.lines = Strings.lines("Huh? %s\nstopped evolving!", self.nick)
     self.timer = PROMPT_FRAMES
     return
   end
 
   if phase == "congrats" then
-    self.lines = { "Congratulations!", "Your " .. self.nick }
+    self.lines = Strings.lines("Congratulations!\nYour %s", self.nick)
     self.timer = PROMPT_FRAMES
     return
   end
@@ -227,7 +228,7 @@ function EvolutionAnim:setPhase(phase)
   if phase == "evolved" then
     -- EvolvedIntoText, then MUSIC_NONE / SFX_CAUGHT_MON / WaitSFX and
     -- `ld c, 40 / call DelayFrames`.
-    self.lines = { "evolved into", self.newName .. "!" }
+    self.lines = Strings.lines("evolved into\n%s!", self.newName)
     Music.stop()
     self:playSfx("Sfx_CaughtMon")
     self.timer = Evolution.CONGRATS_FRAMES
@@ -298,7 +299,7 @@ function EvolutionAnim:nextLearn()
       end)
     end
     self.full[#self.full + 1] = moveId
-    self.lines = { self.nick .. " wants to", "learn " .. moveName .. "!" }
+    self.lines = Strings.lines("%s wants to\nlearn %s!", self.nick, moveName)
   else
     return self:nextLearn()
   end

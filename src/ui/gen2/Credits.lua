@@ -53,6 +53,7 @@
 -- the scene changes and the copyright/THE END tail are the cart's.
 
 local Chrome = require("src.ui.gen2.Chrome")
+local Strings = require("src.core.Strings")
 local Font = require("src.render.Font")
 local GbcPalette = require("src.render.GbcPalette")
 local Logger = require("src.core.Logger")
@@ -813,7 +814,7 @@ function Credits:drawText()
         end
       else
         -- Centred in the eight columns the graphic occupies.
-        local text = "THE END"
+        local text = Strings("THE END")
         local width = Font.width(text)
         Chrome.printThrough(text,
           entry.x + math.floor((entry.width * 8 - width) / 16), entry.y, pal)

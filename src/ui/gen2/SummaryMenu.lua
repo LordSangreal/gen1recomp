@@ -68,6 +68,7 @@ local MonAnim = require("src.render.MonAnim")
 local Palettes = require("src.world.gen2.Palettes")
 local Pokerus = require("src.core.gen2.Pokerus")
 local Unown = require("src.core.gen2.Unown")
+local Strings = require("src.core.Strings")
 
 local SummaryMenu = {}
 SummaryMenu.__index = SummaryMenu
@@ -224,7 +225,9 @@ local function statusText(mon)
   local status = mon.status
   if not status then return nil end
   local class = ItemEffects.STATUS_CLASS[tostring(status):lower()]
-  return class and class:upper()
+  -- Drawn, so it resolves through the catalog.  The literals live in
+  -- ItemEffects.STATUS_CLASS; upper-casing is this screen's presentation.
+  return class and Strings(class:upper()) or nil
 end
 
 -- wTempMonPokerusStatus is one byte: the low nibble counts the days left and
@@ -504,13 +507,13 @@ function SummaryMenu:pinkPlacements()
 
   -- .Status_Type is "STATUS/" <NEXT> "TYPE/", and <NEXT> is two rows down at
   -- the same column -- so the second label is at row 14, not row 13.
-  put(out, "STATUS/", 0, 12)
-  put(out, "TYPE/", 0, 14)
+  put(out, Strings("STATUS/"), 0, 12)
+  put(out, Strings("TYPE/"), 0, 14)
 
   local pokerus = pokerusState(mon)
   if pokerus == "infected" then
     -- .PkrsStr is "#RUS", and '#' is the four-tile POKé compression byte.
-    put(out, "POKéRUS", 1, 13)
+    put(out, Strings("POKéRUS"), 1, 13)
   else
     if pokerus == "immune" then put(out, ".", 8, 8) end
     put(out, statusText(mon) or "OK", 6, 13)
@@ -523,13 +526,13 @@ function SummaryMenu:pinkPlacements()
   put(out, type1, 1, 15)
   put(out, type2, 1, 16)
 
-  put(out, "EXP POINTS", 10, 9)
+  put(out, Strings("EXP POINTS"), 10, 9)
   -- `lb bc, 3, 7`: a three-byte value in seven columns, so the field runs
   -- (13,10) to (19,10).
   put(out, num(mon.experience, 7), 13, 10)
-  put(out, "LEVEL UP", 10, 12)
+  put(out, Strings("LEVEL UP"), 10, 12)
   put(out, num(self:expToNext(), 7), 13, 13)
-  put(out, "TO", 14, 14)
+  put(out, Strings("TO"), 14, 14)
   -- The level printed at (17,14) is the NEXT one: LoadPinkPage bumps
   -- wTempMonLevel, calls PrintLevel, and puts it back.  MAX_LEVEL stays put.
   local level = mon.level or 1
@@ -541,9 +544,9 @@ end
 
 function SummaryMenu:greenPlacements()
   local out = {}
-  put(out, "ITEM", 0, 8)
+  put(out, Strings("ITEM"), 0, 8)
   put(out, self:itemName() or "---", 6, 8)
-  put(out, "MOVE", 0, 10)
+  put(out, Strings("MOVE"), 0, 10)
 
   -- ListMoves runs from (8,10) with wListMovesLineSpacing = SCREEN_WIDTH * 2,
   -- so the four names are two rows apart; ListMovePP runs from (12,11) with
@@ -558,7 +561,7 @@ function SummaryMenu:greenPlacements()
       put(out, self:moveName(entry), 8, nameY)
       -- Two $3e "P" tiles: `ld [hli], a` then `ld [hld], a` writes the same
       -- tile at (12,y) and (13,y).
-      put(out, "PP", 12, ppY)
+      put(out, Strings("PP"), 12, ppY)
       -- `pop hl` then three `inc hl` lands the numbers at (15,y): two digits,
       -- the '/' PrintNum's caller writes, then two more.
       put(out, num(entry.pp, 2), 15, ppY)
@@ -579,9 +582,9 @@ function SummaryMenu:bluePlacements()
   local out = {}
   -- IDNoString is "<ID>№." -- three single tiles, not the seven letters of
   -- "ID No." -- and OTString is "OT/".
-  put(out, "<ID>№.", 0, 9)
+  put(out, Strings("<ID>№."), 0, 9)
   put(out, num(self:otId(), 5, true), 2, 10)
-  put(out, "OT/", 0, 12)
+  put(out, Strings("OT/"), 0, 12)
   local ot = self:otName()
   put(out, ot, SummaryMenu.otColumn(ot), 13)
 
@@ -589,7 +592,7 @@ function SummaryMenu:bluePlacements()
   -- two rows apart, then `add hl, bc` and one more SCREEN_WIDTH puts the first
   -- value at (17,9) -- three columns wide, so every value ends at column 19.
   for i, label in ipairs(STAT_LABELS) do
-    put(out, label, 11, 8 + (i - 1) * 2)
+    put(out, Strings(label), 11, 8 + (i - 1) * 2)
     local value = (mon.stats or {})[STAT_KEYS[i]]
     put(out, num(value, 3), 17, 9 + (i - 1) * 2)
   end
@@ -620,7 +623,7 @@ function SummaryMenu:moveDetailPlacements()
     local entry = moves[slot]
     if entry then
       put(out, self:moveName(entry), 2, nameY)
-      put(out, "PP", 10, ppY)
+      put(out, Strings("PP"), 10, ppY)
       put(out, num(entry.pp, 2), 13, ppY)
       put(out, "/", 15, ppY)
       put(out, num(entry.maxPp or entry.pp, 2), 16, ppY)
@@ -636,15 +639,15 @@ function SummaryMenu:moveDetailPlacements()
     put(out, "┌─────┐", 0, 10)
     put(out, "│", 0, 11)
     put(out, "└", 6, 11)
-    put(out, "Where?", 1, 12)
+    put(out, Strings("Where?"), 1, 12)
     return out
   end
 
   -- String_MoveType_Top / _Bottom are box-drawing glyphs, and the plaque is
   -- open on its right: "┌─────┐" over "│TYPE/└".
   put(out, "┌─────┐", 0, 10)
-  put(out, "│TYPE/└", 0, 11)
-  put(out, "ATTK/", 11, 12)
+  put(out, Strings("│TYPE/└"), 0, 11)
+  put(out, Strings("ATTK/"), 11, 12)
 
   local entry = moves[self.moveIndex]
   local def = entry and self:moveDef(entry.id)
@@ -683,15 +686,15 @@ end
 function SummaryMenu:eggPlacements()
   local mon = self.mon or {}
   local out = {}
-  put(out, "EGG", 8, 1)
+  put(out, Strings("EGG"), 8, 1)
   -- IDNoString / OTString, the same strings the blue page prints, with
   -- FiveQMarkString beside each: an egg's OT and ID are hidden.
-  put(out, "<ID>№.", 8, 3)
+  put(out, Strings("<ID>№."), 8, 3)
   put(out, "?????", 11, 3)
-  put(out, "OT/", 8, 5)
+  put(out, Strings("OT/"), 8, 5)
   put(out, "?????", 11, 5)
   local ty = 9
-  for line in ((eggFlavor(mon.eggSteps or 0) or "") .. "<NEXT>")
+  for line in ((Strings(eggFlavor(mon.eggSteps or 0) or "") or "") .. "<NEXT>")
       :gmatch("(.-)<NEXT>") do
     if line ~= "" then put(out, line, 1, ty) end
     ty = ty + 2

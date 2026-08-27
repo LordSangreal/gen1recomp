@@ -56,6 +56,7 @@
 -- (the ring, the Click!, the countdown restart) is src/core/gen2/PhoneRing.lua.
 
 local Runtime = require("src.mods.Runtime")
+local Strings = require("src.core.Strings")
 
 local Phone = {}
 
@@ -751,21 +752,21 @@ end
 -- still returns its member id, which is better than a bare number.
 function Phone.contactName(id, trainerData)
   local contact = Phone.CONTACTS[id or -1]
-  if not contact then return Phone.NON_TRAINER_NAMES[0], nil end
+  if not contact then return Strings(Phone.NON_TRAINER_NAMES[0]), nil end
   if not contact.class then
-    return Phone.NON_TRAINER_NAMES[contact.number or 0]
-      or Phone.NON_TRAINER_NAMES[0], nil
+    return Strings(Phone.NON_TRAINER_NAMES[contact.number or 0]
+      or Phone.NON_TRAINER_NAMES[0]), nil
   end
   local class = trainerData and trainerData.classes
     and trainerData.classes[contact.class]
   if class and class.trainers then
     for _, row in ipairs(class.trainers) do
       if row.id == contact.member then
-        return row.name, class.name or contact.class
+        return Strings(row.name), Strings(class.name or contact.class)
       end
     end
   end
-  return contact.member, contact.class
+  return Strings(contact.member), Strings(contact.class)
 end
 
 -- ------------------------------------------------------- context helpers
