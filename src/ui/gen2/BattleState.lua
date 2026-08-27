@@ -407,13 +407,13 @@ function BattleState.new(game, opts)
       -- (core.asm:8730); `intro` is what defers the enemy HUD to the step after
       -- it, which is where StartBattle's `call z, UpdateEnemyHUD` sits.
       self:push({ kind = "message", intro = true, cry = enemy,
-        text = "Wild " .. self:name(enemy) .. " appeared!" })
+        text = Strings("Wild %s\nappeared!", self:name(enemy)) })
     else
       local trainerName = (self.battle.trainer and self.battle.trainer.name)
         or "Foe"
       -- WantsToBattleText (core.asm:8701), read against the trainer's own pic.
       self:push({ kind = "message",
-        text = trainerName .. " wants to battle!" })
+        text = Strings("%s wants to\nbattle!", Strings(trainerName)) })
       -- ResetEnemyBattleVars' SlideBattlePicOut at the head of EnemySwitch
       -- (core.asm:3027) pushes that pic off the right edge before the mon is
       -- announced.  Nothing to slide when the cache has no trainer pic.
@@ -424,13 +424,13 @@ function BattleState.new(game, opts)
       -- (core.asm:2978-2980, 3354): this is where the mon's frontpic first
       -- appears, where ANIM_SEND_OUT_MON plays and where the HUD comes up.
       self:push({ kind = "send", side = "enemy", mon = enemy,
-        text = trainerName .. " sent out " .. self:name(enemy) .. "!" })
+        text = Strings("%s sent out\n%s!", Strings(trainerName), self:name(enemy)) })
     end
   end
   local player = self.battle and self.battle.player
   if player then
     self:push({ kind = "sendout",
-      text = "Go! " .. self:name(player) .. "!" })
+      text = Strings("Go! %s!", self:name(player)) })
   end
   -- What the HUD shows chases the real HP one tick at a time
   -- (engine/battle/anim_hp_bar.asm), re-armed by each damage/heal event as
@@ -2786,8 +2786,8 @@ end
 -- the turn goes with it.
 function BattleState:throwBallAtTrainer(itemId)
   self.queue = {}
-  self:push({ kind = "message", text = "The trainer blocked the BALL!" })
-  self:push({ kind = "message", text = "Don't be a thief!" })
+  self:push({ kind = "message", text = Strings("The trainer\nblocked the BALL!") })
+  self:push({ kind = "message", text = Strings("Don't be a thief!") })
   self:consumeItem(itemId)
   self:pushAll(self.battle:takeTurn({ kind = "item", item = itemId }))
   -- NO_ITEM is 0, the id BattleAnim_ThrowPokeBall's first row tests.
@@ -2847,7 +2847,7 @@ function BattleState:pushCaught(enemy, itemId)
   -- and TX_SOUND holds the text engine until the jingle is done
   -- (home/text.asm:834-835), so the line is not dismissable under it.
   self:push({ kind = "message", sfx = SFX_CAUGHT_MON, waitSfx = true,
-    text = "Gotcha! " .. self:name(enemy) .. " was caught!" })
+    text = Strings("Gotcha! %s\nwas caught!", self:name(enemy)) })
   -- BATTLETYPE_TUTORIAL returns before every one of the steps below
   -- (`.FinishTutorial`, and `.return_from_capture: ret z`).
   if self.tutorial or not save then return end
@@ -2934,7 +2934,7 @@ function BattleState:pushCaught(enemy, itemId)
     -- BallSentToPCText, which .SendToPC prints AFTER the nickname prompt
     -- (item_effects.asm:672).
     self:push({ kind = "message",
-      text = self:name(enemy) .. " was sent to BILL's PC." })
+      text = Strings("%s was sent\nto BILL's PC.", self:name(enemy)) })
   end
   self:pushPayDay()
 end
