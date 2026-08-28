@@ -1292,14 +1292,14 @@ function Battle:dealDamage(attacker, defender, damage, opts)
   end
   if endured then
     self:emit({ kind = "message",
-      text = self:monName(defender) .. " endured the hit!" })
+      text = Strings("%s endured the hit!", self:monName(defender)) })
   elseif hungOn then
     -- HungOnText, named after the item the way the cart pipes it through
     -- wStringBuffer1.
     local def = self:itemDef(defender.item)
     self:emit({ kind = "message",
-      text = self:monName(defender) .. " hung on with "
-        .. ((def and def.name) or "FOCUS BAND") .. "!" })
+      text = Strings("%s hung on with\n%s!", self:monName(defender),
+        Strings((def and def.name) or "FOCUS BAND")) })
   end
   -- SUBSTATUS_RAGE: being hit while raging raises the rager's Attack.
   if defenderState.rage and damage > 0 and (defender.hp or 0) > 0 then
@@ -4090,8 +4090,8 @@ function Battle:tryRun(pSpd)
     return false
   end
   if self.trainer then
-    self:emit({ kind = "message", text = "No! There's no running from a "
-      .. "trainer battle!" })
+    self:emit({ kind = "message",
+      text = Strings("No! There's no running from a\ntrainer battle!") })
     self.runRefused = true
     return false
   end
@@ -4294,7 +4294,8 @@ function Battle:switchEnemy(index)
   local outgoing = self.enemy
   local trainerName = (self.trainer and self.trainer.name) or "TRAINER"
   self:emit({ kind = "message",
-    text = trainerName .. " withdrew " .. self:monName(outgoing) .. "!" })
+    text = Strings("%s withdrew\n%s!",
+      Strings(trainerName), self:monName(outgoing)) })
   self.enemyIndex = index
   self.enemy = mon
   -- AI_Switch (engine/battle/ai/items.asm:697)
@@ -4305,7 +4306,8 @@ function Battle:switchEnemy(index)
   self:emit({ kind = "send", side = "enemy", mon = self.enemy,
     hp = self.enemy.hp or 0, status = self.enemy.status or false,
     level = self.enemy.level, experience = self.enemy.experience,
-    text = trainerName .. " sent out " .. self:monName(self.enemy) .. "!" })
+    text = Strings("%s sent out\n%s!",
+      Strings(trainerName), self:monName(self.enemy)) })
   Runtime.emit("battle.battler_switched", {
     battle = self, side = self:sideRecord(self.enemy), battler = self.enemy,
     previous = outgoing,
@@ -4334,8 +4336,8 @@ function Battle:enemyUseItem(item)
     self:volatile(self.enemy).confuseCount = nil
   end
   self:emit({ kind = "message",
-    text = ((self.trainer and self.trainer.name) or "TRAINER")
-      .. " used " .. item .. "!" })
+    text = Strings("%s used\n%s!",
+      Strings((self.trainer and self.trainer.name) or "TRAINER"), Strings(item)) })
   return true
 end
 
@@ -4596,7 +4598,7 @@ local function runTurn(self, action, enemyAction)
     if not charging and not bideLocked
         and not self:hasUsableMoves(self.player) then
       self:emit({ kind = "message",
-        text = self:monName(self.player) .. " has no moves left!" })
+        text = Strings("%s has no moves left!", self:monName(self.player)) })
       move = Battle.STRUGGLE
     end
     -- CheckPlayerTurn's disabled arm spends the turn, whatever was selected
@@ -4607,7 +4609,8 @@ local function runTurn(self, action, enemyAction)
       local state = self:volatile(self.player)
       state.chargeMove, state.vanished = nil, nil
       self:emit({ kind = "message",
-        text = self:monName(self.player) .. "'s " .. move .. " is DISABLED!" })
+        text = Strings("%s's %s is DISABLED!",
+          self:monName(self.player), Strings(move)) })
       return
     end
     -- BattleCommand_CheckObedience runs at the head of the move's effect
@@ -4665,7 +4668,8 @@ local function runTurn(self, action, enemyAction)
       local state = self:volatile(self.enemy)
       state.chargeMove, state.vanished = nil, nil
       self:emit({ kind = "message",
-        text = self:monName(self.enemy) .. "'s " .. enemyMoveId .. " is DISABLED!" })
+        text = Strings("%s's %s is DISABLED!",
+          self:monName(self.enemy), Strings(enemyMoveId)) })
       return
     end
     self:useMove(self.enemy, self.player, enemyMoveId)
@@ -4794,7 +4798,7 @@ function Battle:tickWeather()
         local damage = Effects.sandstormDamage(maxHp)
         mon.hp = math.max(0, mon.hp - damage)
         self:emit({ kind = "message",
-          text = self:monName(mon) .. " is buffeted by the sandstorm!" })
+          text = Strings("%s is buffeted by the sandstorm!", self:monName(mon)) })
         -- .SandstormDamage plays ANIM_IN_SANDSTORM between two SwitchTurnCore
         -- calls, so it runs from the OTHER side (core.asm:1688-1693).
         self:emit({ kind = "damage", side = self:sideOf(mon),
@@ -4816,8 +4820,8 @@ function Battle:tickFutureSight(mon)
   state.futureSight, state.futureSightDamage, state.futureSightSide =
     nil, nil, nil
   if (target.hp or 0) <= 0 then return end
-  self:emit({ kind = "message", text = self:monName(target)
-    .. " took the FUTURE SIGHT attack!" })
+  self:emit({ kind = "message",
+    text = Strings("%s took the FUTURE SIGHT attack!", self:monName(target)) })
   self:dealDamage(mon, target, damage, {})
 end
 
@@ -4827,8 +4831,9 @@ function Battle:tickPerish(mon)
   if not state.perish or (mon.hp or 0) <= 0 then return end
   state.perish = state.perish - 1
   if state.perish > 0 then
-    self:emit({ kind = "message", text = self:monName(mon)
-      .. "'s PERISH count is " .. state.perish .. "!" })
+    self:emit({ kind = "message",
+      text = Strings("%s's PERISH count is %d!",
+        self:monName(mon), state.perish) })
     return
   end
   state.perish = nil
@@ -4850,7 +4855,7 @@ function Battle:tickSeedAndCurse(mon)
     local damage = math.min(math.max(1, math.floor(maxHp / 8)), mon.hp)
     mon.hp = mon.hp - damage
     self:emit({ kind = "message",
-      text = "LEECH SEED saps " .. self:monName(mon) .. "!" })
+      text = Strings("LEECH SEED saps\n%s!", self:monName(mon)) })
     -- ANIM_SAP plays between two SwitchTurnCore calls, from the seeder's side
     -- (core.asm:1013-1021).
     self:emit({ kind = "damage", side = self:sideOf(mon), amount = damage,
@@ -4862,7 +4867,7 @@ function Battle:tickSeedAndCurse(mon)
     local damage = math.max(1, math.floor(maxHp / 4))
     mon.hp = math.max(0, mon.hp - damage)
     self:emit({ kind = "message",
-      text = self:monName(mon) .. "'s hurt by the CURSE!" })
+      text = Strings("%s's hurt by the CURSE!", self:monName(mon)) })
     -- The curse arm borrows ANIM_IN_NIGHTMARE, on the sufferer's own turn
     -- (core.asm:1057-1060).
     self:emit({ kind = "damage", side = self:sideOf(mon), amount = damage,
@@ -4882,14 +4887,16 @@ function Battle:tickWrap(mon)
   if state.wrapCount <= 0 then
     state.wrapCount, state.wrapMove, state.wrapMoveId = nil, nil, nil
     self:emit({ kind = "message",
-      text = self:monName(mon) .. " was released from " .. moveName .. "!" })
+      text = Strings("%s was released from\n%s!",
+        self:monName(mon), Strings(moveName)) })
     return
   end
   local maxHp = mon.maxHp or (mon.stats and mon.stats.hp) or 16
   local damage = math.max(1, math.floor(maxHp / 16))
   mon.hp = math.max(0, mon.hp - damage)
   self:emit({ kind = "message",
-    text = self:monName(mon) .. "'s hurt by " .. moveName .. "!" })
+    text = Strings("%s's hurt by\n%s!",
+      self:monName(mon), Strings(moveName)) })
   -- The trapping move's own anim, played from the trapper's side between two
   -- SwitchTurnCore calls (core.asm:1198-1203).
   self:emit({ kind = "damage", side = self:sideOf(mon), amount = damage,
@@ -4915,7 +4922,7 @@ function Battle:tickScreens()
           if field == "safeguard" then
             -- engine/battle/core.asm:1527
             self:emit({ kind = "message",
-              text = self:monName(self[side]) .. "'s SAFEGUARD faded!" })
+              text = Strings("%s's SAFEGUARD faded!", self:monName(self[side])) })
           else
             self:emit({ kind = "message",
               text = Battle.SCREEN_SIDE_LABEL[side]
@@ -4941,7 +4948,7 @@ function Battle:tickCounters(mon)
     if state.encoreTurns <= 0 then
       state.encore, state.encoreTurns = nil, nil
       self:emit({ kind = "message",
-        text = self:monName(mon) .. "'s ENCORE ended!" })
+        text = Strings("%s's ENCORE ended!", self:monName(mon)) })
     end
   end
   if state.disabledTurns then
@@ -4949,7 +4956,7 @@ function Battle:tickCounters(mon)
     if state.disabledTurns <= 0 then
       state.disabled, state.disabledTurns = nil, nil
       self:emit({ kind = "message",
-        text = self:monName(mon) .. "'s move is no longer disabled!" })
+        text = Strings("%s's move is no longer disabled!", self:monName(mon)) })
     end
   end
 end
@@ -4997,7 +5004,8 @@ function Battle:tickHeldItem(mon)
     local healed = self:heal(mon, math.max(1, math.floor(maxHp / 16)))
     if healed > 0 then
       self:emit({ kind = "message",
-        text = name .. "'s " .. (def.name or "item") .. " restored health!" })
+        text = Strings("%s's %s restored health!",
+          name, Strings(def.name or "item")) })
     end
     return
   end
@@ -5007,7 +5015,8 @@ function Battle:tickHeldItem(mon)
     self:heal(mon, parameter > 0 and parameter or 10, { anim = "RECOVER" })
     mon.item = nil
     self:emit({ kind = "message",
-      text = name .. " ate the " .. (def.name or "BERRY") .. "!" })
+      text = Strings("%s ate the\n%s!",
+        name, Strings(def.name or "BERRY")) })
     return
   end
 
@@ -5019,7 +5028,8 @@ function Battle:tickHeldItem(mon)
     mon.toxicCounter = nil
     mon.item = nil
     self:emit({ kind = "status", side = self:sideOf(mon), status = nil,
-      text = name .. "'s " .. (def.name or "item") .. " cured its status!" })
+      text = Strings("%s's %s cured its status!",
+        name, Strings(def.name or "item")) })
   end
 
   -- UseConfusionHealingItem: HELD_HEAL_CONFUSION (a Bitter Berry) and the
@@ -5030,8 +5040,8 @@ function Battle:tickHeldItem(mon)
     self:volatile(mon).confuseCount = nil
     mon.item = nil
     self:emit({ kind = "message",
-      text = name .. "'s " .. (def.name or "item")
-        .. " cured its confusion!" })
+      text = Strings("%s's %s cured its confusion!",
+        name, Strings(def.name or "item")) })
   end
 end
 

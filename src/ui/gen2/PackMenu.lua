@@ -1031,7 +1031,7 @@ function PackMenu:drawList(listX, listY)
       end
     elseif i == self:total() then
       if i == self.index then self:cursorAt(listX - 1, ty) end
-      Chrome.printThrough("CANCEL", listX, ty, Chrome.DEFAULT_BOX_PALETTE)
+      Chrome.printThrough(Strings("CANCEL"), listX, ty, Chrome.DEFAULT_BOX_PALETTE)
     end
   end
 end
@@ -1105,8 +1105,8 @@ end
 -- YesNoBox's own coords, the same box every other Gen 2 screen here draws.
 function PackMenu:drawYesNo()
   Chrome.box(14, 7, 6, 5)
-  Chrome.printThrough("YES", 16, 8, Chrome.DEFAULT_BOX_PALETTE)
-  Chrome.printThrough("NO", 16, 10, Chrome.DEFAULT_BOX_PALETTE)
+  Chrome.printThrough(Strings("YES"), 16, 8, Chrome.DEFAULT_BOX_PALETTE)
+  Chrome.printThrough(Strings("NO"), 16, 10, Chrome.DEFAULT_BOX_PALETTE)
   Chrome.cursorThrough(15, self.confirm.choice == 1 and 8 or 10, Chrome.DEFAULT_BOX_PALETTE)
 end
 

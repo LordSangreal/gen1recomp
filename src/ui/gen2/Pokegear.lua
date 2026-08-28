@@ -2371,7 +2371,7 @@ function Pokegear:drawPlain()
     -- No town-map art in this cache, so the bubble's "Where?" and the rows it
     -- scrolls between are the whole screen.
     Chrome.box(0, 0, 20, 4)
-    Chrome.print("Where?", 2, 1)
+    Chrome.print(Strings("Where?"), 2, 1)
     Chrome.box(0, 4, 20, 14)
     local rows = self.fly
     local top = math.max(1, math.min((self.flyIndex or 1) - 3, #rows - 5))
@@ -2439,7 +2439,7 @@ function Pokegear:drawPlain()
     self:drawPhoneSubmenu()
   else
     Chrome.box(0, 4, 20, 14)
-    Chrome.print("NO CARD DATA", 2, 6)
+    Chrome.print(Strings("NO CARD DATA"), 2, 6)
   end
 end
 

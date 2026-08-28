@@ -3258,11 +3258,11 @@ function BattleState:contestCatch(mon)
   self:stampCaughtData(mon, true)
   local kind, stock, fresh = BugContest.catch(self.save, mon)
   if kind ~= BugContest.ASK_SWITCH then
-    self:push({ kind = "message", text = "Caught " .. self:name(mon) .. "!" })
+    self:push({ kind = "message", text = Strings("Caught %s!", self:name(mon)) })
     return
   end
   self:push({ kind = "message",
-    text = "You already caught a " .. self:name(stock) .. "." })
+    text = Strings("You already caught a %s.", self:name(stock)) })
   self:push({ kind = "contest-switch", stock = stock, caught = fresh })
 end
 
@@ -3818,12 +3818,12 @@ function BattleState:drawMoveInfoBox(move)
   if not move then return end
   local fighter = self.battle and self.battle.player
   if fighter and self.battle:moveDisabled(fighter, move.id) then
-    Chrome.printThrough("Disabled!", 1, 10, Chrome.DEFAULT_BOX_PALETTE)
+    Chrome.printThrough(Strings("Disabled!"), 1, 10, Chrome.DEFAULT_BOX_PALETTE)
     return
   end
   local def = self.game and self.game.data and self.game.data.moves
     and self.game.data.moves[move.id]
-  Chrome.printThrough("TYPE/", 1, 9, Chrome.DEFAULT_BOX_PALETTE)
+  Chrome.printThrough(Strings("TYPE/"), 1, 9, Chrome.DEFAULT_BOX_PALETTE)
   local moveType = def and def.type
   Chrome.printThrough(moveType and (TYPE_NAMES[moveType] or moveType) or "",
     2, 10, Chrome.DEFAULT_BOX_PALETTE)
