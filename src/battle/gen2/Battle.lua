@@ -2793,8 +2793,9 @@ Battle.MOVE_EFFECTS.EFFECT_FORCE_SWITCH = function(self, attacker, defender,
     -- the mon that was sent away.
     self.forcedSwitch = true
     self:emit({ kind = "run", side = self:sideOf(defender),
-      text = self:monName(defender)
-        .. (moveId == "ROAR" and " fled in fear!" or " was blown away!") })
+      text = moveId == "ROAR"
+        and Strings("%s fled in fear!", self:monName(defender))
+        or Strings("%s was blown away!", self:monName(defender)) })
     return
   end
 
@@ -2830,7 +2831,7 @@ Battle.MOVE_EFFECTS.EFFECT_FORCE_SWITCH = function(self, attacker, defender,
   self:emit({ kind = "send", side = self:sideOf(incoming), mon = incoming,
     hp = incoming.hp or 0, status = incoming.status or false,
     level = incoming.level, experience = incoming.experience,
-    text = self:monName(incoming) .. " was dragged out!" })
+    text = Strings("%s was dragged out!", self:monName(incoming)) })
   self:breakTrapsOnSend(incoming)
   self:spikesDamage(incoming)
   -- wForcedSwitch: the round ends here, skipping the between-turn effects.
@@ -2863,7 +2864,7 @@ Battle.MOVE_EFFECTS.EFFECT_TELEPORT = function(self, attacker, defender)
   self.outcome = "fled"
   self.forcedSwitch = true
   self:emit({ kind = "run", side = self:sideOf(attacker),
-    text = self:monName(attacker) .. " fled from battle!" })
+    text = Strings("%s fled from battle!", self:monName(attacker)) })
 end
 
 -- -------------------------------------------------------- the move effects

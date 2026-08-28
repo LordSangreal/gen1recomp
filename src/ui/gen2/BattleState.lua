@@ -2851,7 +2851,7 @@ end
 -- older cache, or BATTLE SCENE off) nothing ever wobbled, so it is the first.
 function BattleState:ballFailureText()
   local wobble = (self.ballThrow and self.ballThrow.wobble) or 1
-  return BALL_FAILURE_TEXT[math.max(1, math.min(#BALL_FAILURE_TEXT, wobble))]
+  return Strings(BALL_FAILURE_TEXT[math.max(1, math.min(#BALL_FAILURE_TEXT, wobble))])
 end
 
 -- UseBallInTrainerBattle (item_effects.asm:2579).  Not a bare refusal: the ball
