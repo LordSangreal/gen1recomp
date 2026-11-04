@@ -1393,7 +1393,7 @@ function Pokegear:stationName(station)
   local rows = data and data.gen2RadioChannels
   if type(rows) == "table" then
     local record = rows[station]
-    return record and record.name or nil
+    return record and Strings(record.name) or nil
   end
   if station == "BUENAS_PASSWORD" then
     local metadata = Buena.metadata(data)

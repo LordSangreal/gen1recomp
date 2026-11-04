@@ -591,6 +591,7 @@ Schemas.GEN2 = {
   held_items = "gen2HeldItems", phone_contacts = "gen2PhoneContacts",
   decorations = "gen2Decorations", apricorns = "gen2Apricorns",
   landmarks = "gen2Landmarks.landmarks", radio_channels = "gen2RadioChannels",
+  pokedex = "gen2Pokedex.entries",
   spawns = "gen2Landmarks.spawns", fly_points = "gen2Landmarks.flypoints",
   -- Still no Gen 2 home.  Every one of these is a system Gold reimplements
   -- WITHOUT reading a registry: the Gen 1 target is still built and merged
