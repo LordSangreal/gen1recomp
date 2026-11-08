@@ -651,6 +651,7 @@ Schemas.GEN2 = {
 Schemas.GEN1 = {
   held_items = false, phone_contacts = false, decorations = false,
   apricorns = false, landmarks = false, radio_channels = false,
+  pokedex = false,
   rom_text = false, marts = false, spawns = false, fly_points = false,
 }
 
@@ -3910,6 +3911,31 @@ R.apricorns = {
   },
   example = 'mod.content.apricorns:override("RED_APRICORN", '
     .. '{ apricorn = "RED_APRICORN", ball = "ULTRA_BALL", event = 600, index = 1 })',
+}
+
+-- data/generated/pokedex.lua entries: one row per species, read by
+-- src/ui/gen2/PokedexMenu.lua for the #DEX pages.  `kind` is the category
+-- printed above the entry ("PSI", "FOSSIL"); `text` and `text2` are the two
+-- description screens, with <NEXT> marking a line break inside each.  Height
+-- and weight are the cart's own fixed-point digits (tenths of a foot, tenths
+-- of a pound), which is what printNumString formats.
+--
+-- Every field is optional so a translation can patch `kind`/`text`/`text2`
+-- without restating the measurements it does not change.
+R.pokedex = {
+  -- No `target`: a Gen 2-only registry carries none, and the route lives in
+  -- Schemas.GEN2 alone.
+  semantics = "record",
+  fields = {
+    id = f.opt(f.str),
+    dex = f.opt(f.int(0)),
+    kind = f.opt(f.str),
+    text = f.opt(f.str),
+    text2 = f.opt(f.str),
+    height = f.opt(f.int(0)),
+    weight = f.opt(f.int(0)),
+  },
+  example = 'mod.content.pokedex:patch("ABRA", { kind = "PSI" })',
 }
 
 -- data/maps/landmarks.asm.  The town-map places, which on Gold are one index
