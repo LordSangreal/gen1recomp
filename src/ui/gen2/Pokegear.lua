@@ -838,7 +838,8 @@ local function buenaLine(R, label, nextLine, word)
   local body = R.data.buenaData and R.data.buenaData.text
     and R.data.buenaData.text[label]
   assert(type(body) == "string", "missing Crystal Buena radio text: " .. label)
-  body = CommonText.plain(body):gsub("^\n", "")
+  local plain = CommonText.plain(body):gsub("^\n", "")
+  body = Strings(plain)
   body = body:gsub("{STRBUF}", function() return word or "" end)
   R:nextLine(body, nextLine)
 end
@@ -1397,7 +1398,7 @@ function Pokegear:stationName(station)
   end
   if station == "BUENAS_PASSWORD" then
     local metadata = Buena.metadata(data)
-    return metadata and metadata.stationName
+    return metadata and metadata.stationName and Strings(metadata.stationName)
   end
   return STATION_NAMES[station]
 end

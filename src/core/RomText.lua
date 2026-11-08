@@ -33,6 +33,10 @@ return function(data, label, fallback, ...)
     if fallback == nil then error("ROM text " .. tostring(label) .. " is not in the cache", 2) end
     return Strings(fallback, ...)
   end
+  -- The cache text is cart DATA no mod registry reaches: route the template
+  -- (placeholders still in place) through the catalog so a translation can
+  -- replace it. Untranslated builds get the source string straight back.
+  text = Strings(text)
   local args = { ... }
   if #args == 0 then return text end
 

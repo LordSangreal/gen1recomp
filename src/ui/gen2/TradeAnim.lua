@@ -417,7 +417,7 @@ function TradeAnimView:lines(id)
     body, buffers = fallback.text, fallback.buffers
   end
   local pages = TradeMenu.paginate(
-    TradeAnimView.fill(body, self:buffers(), buffers))
+    TradeAnimView.fill(Strings(body), self:buffers(), buffers))
   return pages[1]
 end
 

@@ -155,7 +155,10 @@ function TradeMenu:lineFor(dialog)
   local texts = self.eventTables.tradeTexts
   local row = texts and texts[dialog]
   local set = self.row and self.row.dialog
-  local body = (row and set and row[set]) or FALLBACK[dialog] or ""
+  -- The body is cart DATA (events.tradeTexts), which no mod registry reaches:
+  -- route it through the catalog so a translation can replace it. Untranslated
+  -- builds get the source string straight back.
+  local body = Strings((row and set and row[set]) or FALLBACK[dialog] or "")
   local bufRow = (self.eventTables.tradeBuffers or {})[dialog]
   local buffers = bufRow and set and bufRow[set]
   return TradeMenu.paginate(
@@ -243,15 +246,15 @@ function TradeMenu:chose(index)
   -- NPCTradeCableText is a bare PrintText (engine/events/npc_trade.asm:37-41):
   -- nothing rings under the cable line.  The sounds all belong to the
   -- animation past it (SFX_GIVE_TRADEMON / SFX_GET_TRADEMON).
-  self:sayRaw(texts.NPCTradeCableText
-      or Strings.source("OK, connect the\nGame Link Cable."),
+  self:sayRaw(Strings(texts.NPCTradeCableText
+      or Strings.source("OK, connect the\nGame Link Cable.")),
     bufs.NPCTradeCableText,
     function()
       local given, received =
         NpcTrade.perform(self.data, self.save, self.row, index)
       self:playAnim(given, received, function()
-        self:sayRaw(texts.TradedForText
-            or Strings.source("{PLAYER} traded\n{STRBUF} for\v{STRBUF}."),
+        self:sayRaw(Strings(texts.TradedForText
+            or Strings.source("{PLAYER} traded\n{STRBUF} for\v{STRBUF}.")),
           bufs.TradedForText,
           function() self:refuse(NpcTrade.DIALOG_COMPLETE) end)
       end)
