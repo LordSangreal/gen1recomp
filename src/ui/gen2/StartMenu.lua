@@ -134,9 +134,12 @@ function StartMenu.new(game, opts)
   -- Let hooks inspect the cart's stable source labels. Translate only the
   -- built-in rows afterwards; mod-supplied labels are content and stay raw.
   for _, item in ipairs(items) do
-    if item.translateLabel then item.label = Strings(item.label) end
-    if item.translateDesc then
-      local translated = Strings(item.desc)
+    if item.translateLabel or (item.label and Strings.lookup(item.label) ~= item.label) then
+      item.label = Strings(item.label)
+    end
+    local rawDesc = type(item.desc) == "table" and table.concat(item.desc, "\n") or item.desc
+    if rawDesc and (item.translateDesc or Strings.lookup(rawDesc) ~= rawDesc) then
+      local translated = Strings(rawDesc)
       item.desc = {}
       for line in (translated .. "\n"):gmatch("(.-)\n") do
         item.desc[#item.desc + 1] = line
