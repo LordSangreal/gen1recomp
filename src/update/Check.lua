@@ -20,7 +20,7 @@
 local Check = {}
 local Platform = require("src.core.Platform")
 
-Check.REPO = "bryanthaboi/gen1recomp"
+Check.REPO = "LordSangreal/gen1recomp"
 
 -- Full native packages are deliberately named by release target, not by the
 -- generic .love payload.  Keeping the mapping here makes the release parser,

@@ -29,7 +29,7 @@ PatchNotes.FETCH_FAILED = "Unable to fetch patch notes."
 
 PatchNotes.NO_TRANSPORT = "This build has no patch notes packed in, and this platform "
   .. "cannot check GitHub for them.\n\n"
-  .. "Release notes: github.com/bryanthaboi/gen1recomp/releases"
+  .. "Release notes: github.com/LordSangreal/gen1recomp/releases"
 
 function PatchNotes.canCheckOnline()
   local Platform = require("src.core.Platform")
