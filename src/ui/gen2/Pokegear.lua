@@ -1256,7 +1256,8 @@ end
 function Pokegear:phoneText(name)
   local label = PHONE_TEXT[name]
   if not label then return "" end
-  return self:romLine(label)
+  local raw = self:romLine(label)
+  return Strings(raw)
 end
 
 -- GetCallerClassAndName: a trainer contact is "<name>:" over the class name, a
@@ -2181,9 +2182,14 @@ function Pokegear:drawClock()
   -- Pokegear_UpdateClock: ClearBox(3,5) 5x14, the day at (6,6) and
   -- PrintHoursMins at (6,8) -- two digits, ':', two more, then AM/PM at
   -- column 12.
-  local day = RADIO_DAYS[(weekday or 0) - 1]
-  self:text(day and self:romLine("Pokegear_UpdateClock.GearTodayText",
-    { DAY = self:romLine(day) .. self:romLine(DAY_LABEL) }) or "", 6, 6)
+  local dayName = Clock.weekdayName(weekday)
+  if dayName then
+    self:text(dayName, 6, 6)
+  else
+    local day = RADIO_DAYS[(weekday or 0) - 1]
+    self:text(day and self:romLine("Pokegear_UpdateClock.GearTodayText",
+      { DAY = self:romLine(day) .. self:romLine(DAY_LABEL) }) or "", 6, 6)
+  end
   local display = hour % 12
   if display == 0 then display = 12 end
   self:text(Chrome.number(display, 2), 6, 8)
@@ -2559,7 +2565,7 @@ function Pokegear:drawPhoneSubmenu()
   self:textbox(menu.x, menu.y, 8, menu.rows * 2)
   local index = 0
   for line in (self:romLine(menu.label) .. "\n"):gmatch("(.-)\n") do
-    self:text(line, menu.textX, menu.textY + index * 2)
+    self:text(Strings(line), menu.textX, menu.textY + index * 2)
     index = index + 1
   end
   self:cursor(menu.textX - 1, menu.textY + self.phoneSubmenuCursor * 2)
