@@ -201,10 +201,16 @@ local MENU = {
   Strings.source("FIGHT"), Strings.source("<PK><MN>"),
   Strings.source("PACK"), Strings.source("RUN"),
 }
-local MENU_ACTION = { FIGHT = "fight", ["<PK><MN>"] = "party",
-  PACK = "item", RUN = "run" }
-local MENU_BOX_X = 8
-local MENU_COL_SPACING = 6
+local MENU_ACTION = {
+  FIGHT = "fight",
+  ["<PK><MN>"] = "party",
+  ["POKéMON"] = "party",
+  ["POKEMON"] = "party",
+  PACK = "item",
+  RUN = "run",
+}
+local MENU_BOX_X = 2
+local MENU_COL_SPACING = 8
 
 -- ContestBattleMenuHeader is the same 2x2 grid moved out to menu_coords 2, 12
 -- with 12 tiles of column spacing, because its third label is "PARKBALL×" and
@@ -4629,6 +4635,9 @@ function BattleState:menuLabels()
   end
   labels[1], labels[2], labels[4] =
     Strings(MENU[1]), Strings(MENU[2]), Strings(MENU[4])
+  if labels[2] == "<PK><MN>" or labels[2] == "PKMN" then
+    labels[2] = "POKéMON"
+  end
   if not self.contest then
     labels[3] = Strings(MENU[3])
   else
@@ -4761,9 +4770,9 @@ function BattleState:drawBottom(ox)
   end
   if self.phase == "menu" then
     self:printMessage(ox)
-    local boxX = (self.contest and CONTEST_MENU_BOX_X or MENU_BOX_X) + ox
+    local boxX = (self.contest and CONTEST_MENU_BOX_X or BattleState.MENU_BOX_X or MENU_BOX_X) + ox
     local spacing = self.contest and CONTEST_MENU_COL_SPACING
-      or MENU_COL_SPACING
+      or BattleState.MENU_COL_SPACING or MENU_COL_SPACING
     Chrome.box(boxX, 12, 20 + ox - boxX, 6)
     for i, label in ipairs(self:menuLabels()) do
       local col = ((i - 1) % 2) * spacing
@@ -4971,6 +4980,9 @@ function BattleState:drawWidescreen(winW, winH)
 end
 
 BattleState.MENU = MENU
+BattleState.MENU_ACTION = MENU_ACTION
+BattleState.MENU_BOX_X = MENU_BOX_X
+BattleState.MENU_COL_SPACING = MENU_COL_SPACING
 BattleState.STATUS_TAGS = STATUS_TAGS
 BattleState.Battle = Battle
 
